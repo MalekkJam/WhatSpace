@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc}; // for the date and time
 
 
 // fot he node structure 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
     pub id: String,      // string names ad example "NodeA" or "NodeB"
     pub address: String, // the adresse of the node 
@@ -25,6 +26,7 @@ impl Node {
 }
 
 // fot the MsgStatus we use an enumeration to represent the different status of the bundle during its lifecycle
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MsgStatus { // TODO: is it correct for the moment to use these for the status of the bundle ?
     Pending,    // the bundle is created but not yet sent
     InTransit,  // the bundle is on the way to the destination
@@ -33,6 +35,7 @@ pub enum MsgStatus { // TODO: is it correct for the moment to use these for the 
 }
 
 //Bundle 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bundle {
     pub id: String,                  // id unique for the bundle
     pub source: Node,                // the source node of the bundle
@@ -58,5 +61,4 @@ impl Bundle {
             shipment_status: MsgStatus::Pending, //bydefault its pending when we create a new bundle
         }
     }
-
 }
