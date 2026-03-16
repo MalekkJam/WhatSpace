@@ -1,4 +1,5 @@
 use super::epidemic::NetworkGraph;
+use super::model::Bundle;
 use chrono::offset::Utc;
 use pathfinding::directed::dijkstra::dijkstra;
 use uuid::Uuid;
@@ -43,7 +44,7 @@ impl RoutingEngine {
         network: &NetworkLayer,
     ) {
         // Check if we are the destination
-        if self.node_id == bundle.destination {
+        if self.node_id == bundle.destination.id {
             // TODO: update bundle status to delivered
             // wainting for issue #26
             return;
@@ -58,7 +59,7 @@ impl RoutingEngine {
         }
 
         // Find next hop using Dijkstra
-        let next_hop = self.find_next_hop(bundle.destination);
+        let next_hop = self.find_next_hop(bundle.destination.id);
         if next_hop.is_none() {
             // waiting for issue #22
             bundle_manager.store_bundle(bundle);
