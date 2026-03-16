@@ -26,5 +26,31 @@ impl BundleManager {
     // Function to get all bundles stored at the node, used by the SCF to drop expired bundles
     pub fn all(&self) -> Vec<Bundle> {
         self.storage.get_all_bundles()
-    }    
+    }  
+
+    /// Called when an Ack bundle is received from a peer.
+    /// Deletes the corresponding Data bundle from local storage.
+    /// Returns false if the Ack was already known (duplicate).
+    pub fn handle_incoming_ack(&mut self, ack: &Bundle) -> bool {
+        // Deduplication — have we already seen this ACK?
+        if self.storage.get_bundle(&ack.id).is_some() {
+            return false;
+        }
+
+        // Save the ACK to propagate it to other peers
+        self.storage.save_bundle(ack);
+
+        // Delete the corresponding local Data bundle
+        if let BundleKind::Ack { acked_bundle_id } = &ack.kind {
+            self.storage.delete_bundle(acked_bundle_id);
+        }
+
+        true
+    }
+
+    /// Checks if a bundle is already known — used during anti-entropy
+    /// to avoid resending bundles already present at a peer.
+    pub fn has_bundle(&self, bundle_id: &str) -> bool {
+        self.store.get_bundle(bundle_id).is_some()
+    }  
 }
