@@ -7,3 +7,6 @@ pour nous aider a strucutuer notre travail et a suivre les différentes étapes 
    , rust doesn't know how to stock uuid in the json format so i have to convert it to string before storing it in the json file and when we read it from the json file we have to convert it back to uuid format
 - for the date and time we use chrono to provide all functionality needed to do correct operations on dates and times
 - Serde is a framework for serializing and deserializing Rust data structures efficiently and generically
+
+
+### feat3-implem…ection-logic
