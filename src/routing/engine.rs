@@ -1,8 +1,10 @@
 use super::epidemic::NetworkGraph;
-use super::model::Bundle;
-use chrono::offset::Utc;
 use pathfinding::directed::dijkstra::dijkstra;
 use uuid::Uuid;
+use super::bundleManager::BundleManager;
+use super::model::Bundle;
+use chrono::Utc;
+
 
 pub struct RoutingEngine {
     pub node_id: Uuid,
@@ -62,7 +64,7 @@ impl RoutingEngine {
         let next_hop = self.find_next_hop(bundle.destination.id);
         if next_hop.is_none() {
             // waiting for issue #22
-            bundle_manager.store_bundle(bundle);
+            bundle_manager.save_bundle(bundle);
             return;
         }
 

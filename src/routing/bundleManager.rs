@@ -1,6 +1,6 @@
 use uuid::Uuid;
-use crate::routing::model::{Bundle, MsgStatus};
-use crate::storage::StorageLayer;
+use crate::routing::model::{Bundle, MsgStatus, BundleKind};
+use crate::storage::{self, StorageLayer};
 
 pub struct BundleManager {
     pub node_id: Uuid,
@@ -9,24 +9,34 @@ pub struct BundleManager {
 
 impl BundleManager {
      // Function to get bundles stored at the node, used by the engine to get the summary vector
+
+    pub fn new (node_id: Uuid, storage : StorageLayer) -> Self {
+        BundleManager { node_id, storage }
+    }
+
     pub fn get_bundles_from_node(&self, node_id: Uuid) -> Vec<Uuid> {
         self.storage.get_bundles_by_node(node_id)
     }
 
     // Function to get a bundle by its id, used by the SCF to fetch the full bundle before forwarding
-    pub fn get(&self, bundle_id: &str) -> Option<Bundle> {
-        self.storage.get_bundle(bundle_id)        
+    pub fn get(&self, bundle_id: &String) -> Option<Bundle> {
+        self.storage.get_bundle(bundle_id)
     }
 
     // Function to delete a bundle by its id, used by the SCF to remove bundles that have been forwarded or expired
-    pub fn delete_bundle(&mut self, bundle_id: &str) {
-        self.storage.delete_bundle(bundle_id);
+    pub fn delete_bundle(&mut self, bundle_id: String) -> bool {
+        self.storage.delete_bundle(bundle_id)
     }
+
+    pub fn save_bundle(&mut self,bundle : &Bundle) -> bool {
+        self.storage.save_bundle(bundle)
+    }
+
 
     // Function to get all bundles stored at the node, used by the SCF to drop expired bundles
     pub fn all(&self) -> Vec<Bundle> {
         self.storage.get_all_bundles()
-    }  
+    }
 
     /// Called when an Ack bundle is received from a peer.
     /// Deletes the corresponding Data bundle from local storage.
@@ -36,21 +46,19 @@ impl BundleManager {
         if self.storage.get_bundle(&ack.id).is_some() {
             return false;
         }
-
         // Save the ACK to propagate it to other peers
-        self.storage.save_bundle(ack);
-
         // Delete the corresponding local Data bundle
-        if let BundleKind::Ack { acked_bundle_id } = &ack.kind {
-            self.storage.delete_bundle(acked_bundle_id);
+        if let BundleKind::Ack { ack_bundle_id } = &ack.kind {
+            self.storage.delete_bundle(ack_bundle_id) && self.storage.save_bundle(ack)
         }
-
-        true
+        else {
+            false
+        }
     }
 
     /// Checks if a bundle is already known — used during anti-entropy
     /// to avoid resending bundles already present at a peer.
     pub fn has_bundle(&self, bundle_id: &str) -> bool {
-        self.store.get_bundle(bundle_id).is_some()
-    }  
+        self.storage.get_bundle(bundle_id).is_some()
+    }
 }

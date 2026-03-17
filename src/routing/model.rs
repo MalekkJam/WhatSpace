@@ -24,27 +24,27 @@ impl Node {
             port,
             peers,
         }
-       
+
 }
 }
 
 // fot the MsgStatus we use an enumeration to represent the different status of the bundle during its lifecycle
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum MsgStatus { 
+pub enum MsgStatus {
 
     // the bundle is created but not yet sent
-    Pending,    
+    Pending,
 
     // the bundle is on the way to the destination
-    InTransit,  
+    InTransit,
 
     // the bundle has been delivered to the destination
     /// For Data bundles: set when an Ack is received, then deleted from storage.
     /// For Ack bundles: set when the Ack reaches the original sender.
     Delivered,
-      
+
     // the bundle has expired //TTL exceeded
-    Expired,    
+    Expired,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +53,7 @@ pub enum BundleKind{
     Ack {ack_bundle_id: String}, // for the acknowledgment bundle we need the id of the bundle
 }
 
-//Bundle 
+//Bundle
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bundle {
     pub id: String,                  // id unique for the bundle
