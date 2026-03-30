@@ -51,4 +51,6 @@ pub trait StorageLayer {
     fn get_bundles_by_node(&self, node_id: uuid::Uuid) -> Vec<Uuid>;
 
     fn delete_bundle(&mut self, bundle_id: Uuid) -> bool;
+
+    fn cleanup_expired_bundles(&mut self) -> usize;
 }
