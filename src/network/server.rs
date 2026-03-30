@@ -122,27 +122,42 @@ pub fn start_server(registry: PeerRegistry) {
 }
 
 // Fetch specific requested nodes from registry and return address/port.
-fn get_connected_peers(
-    registry: &PeerRegistry,
-    requested_ids: &[Uuid],
-) -> HashMap<String, (u32, String)> {
-    match registry.lock() {
-        Ok(map) => requested_ids
-            .iter()
-            .filter_map(|id| {
-                map.get(id)
-                    .filter(|record| record.status == ConnectionStatus::Connected)
-                    .map(|record| (*id, (record.node.port, record.node.address.clone())))
-            })
-            .collect(),
-        Err(_) => HashMap::new(),
-    }
-}
+// fn get_requested_peers(registry: &PeerRegistry, requested_ids: &[Uuid]) -> HashMap<u32, String> {
+//     match registry.lock() {
+//         Ok(map) => requested_ids
+//             .iter()
+//             .filter_map(|id| {
+//                 map.get(id).map(|record| {
+//                     (record.node.port, record.node.address.clone())
+//                 })
+//             })
+//             .collect(),
+//         Err(_) => HashMap::new(),
+//     }
+// }
 
 // Optional: Get all nodes with their status (useful for debugging/monitoring)
 pub fn get_all_peers(registry: &PeerRegistry) -> Vec<PeerRecord> {
     match registry.lock() {
         Ok(map) => map.values().cloned().collect(),
         Err(_) => Vec::new(),
+    }
+}
+
+pub fn get_connected_peers(registry: &PeerRegistry) -> Vec<PeerRecord> {
+    match registry.lock() {
+        Ok(map) => map
+            .values()
+            .filter(|record| record.status == ConnectionStatus::Connected)
+            .cloned()
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn verify_unique_name(registry: &PeerRegistry, name: &str) -> bool {
+    match registry.lock() {
+        Ok(map) => !map.values().any(|record| record.node.name == name),
+        Err(_) => false,
     }
 }
