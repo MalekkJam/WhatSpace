@@ -27,7 +27,7 @@ pub type PeerRegistry = Arc<Mutex<HashMap<Uuid, PeerRecord>>>;
 #[serde(tag = "type", content = "data")]
 pub enum ServerRequest {
     Register(Node),
-    GetPeers(Vec<Uuid>), // List of node IDs to query for
+    GetConnectedPeers(Vec<Uuid>), // List of node IDs to query for
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -82,8 +82,8 @@ pub fn handle_client(mut stream: TcpStream, registry: PeerRegistry) {
                     );
                 }
             }
-            ServerRequest::GetPeers(requested_ids) => {
-                let peers = get_requested_peers(&registry, &requested_ids);
+            ServerRequest::GetConnectedPeers(requested_ids) => {
+                let peers = get_connected_peers(&registry, &requested_ids);
                 let _ = write_json(&mut stream, &ServerResponse::Peers(peers));
             }
         }
@@ -122,14 +122,17 @@ pub fn start_server(registry: PeerRegistry) {
 }
 
 // Fetch specific requested nodes from registry and return address/port.
-fn get_requested_peers(registry: &PeerRegistry, requested_ids: &[Uuid]) -> HashMap<u32, String> {
+fn get_connected_peers(
+    registry: &PeerRegistry,
+    requested_ids: &[Uuid],
+) -> HashMap<String, (u32, String)> {
     match registry.lock() {
         Ok(map) => requested_ids
             .iter()
             .filter_map(|id| {
-                map.get(id).map(|record| {
-                    (record.node.port, record.node.address.clone())
-                })
+                map.get(id)
+                    .filter(|record| record.status == ConnectionStatus::Connected)
+                    .map(|record| (*id, (record.node.port, record.node.address.clone())))
             })
             .collect(),
         Err(_) => HashMap::new(),

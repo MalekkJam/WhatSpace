@@ -8,6 +8,7 @@ use uuid::Uuid; // id unique // for the date and time
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
     pub id: Uuid,         // unique identifier for the node
+    pub name : String,
     pub address: String,  // IP address of the node
     pub port: u16,        // port the node listens on
     pub peers: Vec<Uuid>, // IDs of known peer nodes
@@ -15,9 +16,10 @@ pub struct Node {
 
 // implementation of the node struct
 impl Node {
-    pub fn new(address: &str, port: u16, peers: Vec<Uuid>) -> Self {
+    pub fn new(name : &str, address: &str, port: u16, peers: Vec<Uuid>) -> Self {
         Node {
             id: Uuid::new_v4(),
+            name : name.to_string(),
             address: address.to_string(),
             port,
             peers,
