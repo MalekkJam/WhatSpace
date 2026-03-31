@@ -1,175 +1,171 @@
+use crate::network::server::{
+    get_connected_peers, PeerRecord, PeerRegistry, ServerRequest, ServerResponse,
+};
+use crate::routing::model::{Bundle, Node};
+use crate::network::protobuf::{serialize,deserialize};
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use crate::routing::model::Node;
-use serde_json::json;
 use uuid::Uuid;
-use std::collections::HashMap;
-use crate::protobuf::bundle_proto::Bundle as ProtobufBundle;
 
-
-fn getNode(node: &Node) -> Node {
-    return node.clone(); //TODO: see if the clone method is good to get all the informations of the node 
-                            // recupere une copie d ela node 
-}
-
-pub fn connect_to_server(node: &Node) -> Option<TcpStream> {
-    // Get les informations  node
-    let node_info = getNode(node);
-    println!("Node récupéré: {:?}", node_info.id);
-    
-    // reate the tcp connection 
+pub fn connect_to_server(node: &Node) -> bool {
     let address = format!("{}:{}", node.address, node.port);
     match TcpStream::connect(&address) {
         Ok(mut stream) => {
             println!("Connecté à {}", address);
-            
-            //send infoirmations
-            let message = json!({
-                "id": node_info.id.to_string(),
-                "address": node_info.address,
-                "port": node_info.port,
-                "peers": node_info.peers,
-            })
-            .to_string();
-            
-            
+
+            let message =
+                serde_json::to_string(&ServerRequest::Register(node.clone())).unwrap_or_default();
+
             match stream.write_all(message.as_bytes()) {
                 Ok(_) => {
                     println!("Données envoyées au serveur !");
-                    Some(stream)
+                    true
                 }
                 Err(e) => {
                     println!("Erreur d'envoi: {}", e);
-                    None
+                    false
                 }
             }
         }
         Err(e) => {
             println!("Erreur de connexion: {}", e);
+            false
+        }
+    }
+}
+
+pub fn connect_to_peer(source: &Node, destination: &Node) -> Option<TcpStream> {
+    let addr = format!("{}:{}", destination.address, destination.port);
+    match TcpStream::connect(&addr) {
+        Ok(stream) => {
+            println!("[{}] Connected to peer at {}", source.id, addr);
+            Some(stream)
+        }
+        Err(e) => {
+            eprintln!("[{}] Failed to connect to {}: {}", source.id, addr, e);
             None
         }
     }
 }
 
-//not sure about this fuction 
-// to be corrected 
-pub fn connect_to_peers(node: &Node,nodes_registry: &HashMap<Uuid, Node>,) -> Result<Vec<(Uuid, TcpStream)>, String> {
+pub fn connect_to_peers(node: &Node) -> Vec<(PeerRecord, TcpStream)> {
+    let connected_peers = request_connected_peers(node, node.peers.clone());
 
-    // Verify that the registry is not empty
-    if nodes_registry.is_empty() {
-        return Err("Error: nodes registry is empty".to_string());
+    if connected_peers.is_empty() {
+        return Vec::new();
     }
 
-    let mut connections = Vec::new();
-    let mut errors = Vec::new(); 
-    //todo: if this not necessary we can delete it 
-
-    // Connect to all peers in the local node's peers list
-    for &peer_id in &node.peers {
-        match nodes_registry.get(&peer_id) {
-            Some(peer) => {
-                let address = format!("{}:{}", peer.address, peer.port);
-
-                match TcpStream::connect(&address) {
-                    Ok(mut stream) => {
-                        println!("[Client] Connected to peer {} at {}", peer_id, address);
-
-                        // Send node info to peer (Omar's function)
-                        match send_info_to_client(&mut stream, node) {
-                            Ok(info_map) => {
-                                println!("[Client] Info sent to peer {}: {:?}", peer_id, info_map);
-                                connections.push((peer_id, stream));
-                            }
-                            Err(e) => {
-                                let msg = format!("Peer {} connected but info send failed: {}", peer_id, e);
-                                println!("[Client] {}", msg);
-                                errors.push(msg);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        let msg = format!(
-                            "Could not connect to peer {} at {}: {}",
-                            peer_id, address, e
-                        );
-                        println!("[Client] {}", msg);
-                        errors.push(msg); // we keep the error and continue trying to connect to other peers
-                    }
-                }
-            }
-            None => {
-                let msg = format!("Peer {} not found in registry", peer_id);
-                println!("[Client] {}", msg);
-                errors.push(msg);
-            }
-        }
-    }
-
-    // TODO: if there is no connection BIG PROBLEM 
-    if connections.is_empty() && !errors.is_empty() {
-        return Err(format!(
-            "Failed to connect to any peer. Errors:\n{}",
-            errors.join("\n")
-        ));
-    }
-
-    // THIS IS MIXED BUT IT CAN BE USEFUL TO KNOW WHICH PEERS FAILED TO CONNECT 
-    // I AM NOT SURE IF THIS IS THE BEST WAY TO HANDLE THIS SITUATION
-    if !errors.is_empty() {
-        println!("[Client] Warning: some peers could not be reached:");
-        for e in &errors {
-            println!("  - {}", e);
-        }
-    }
-
-    Ok(connections)
+    connected_peers
+        .into_iter()
+        .filter_map(|record| connect_to_peer(node, &record.node).map(|stream| (record, stream)))
+        .collect()
 }
 
-pub fn send_bundle(bundle: ProtobufBundle, peers: Vec<Node>) {
+// Call the get_connected_peers on the server
+// Executed the ServerRequest::GetConnectedPeers
+fn request_connected_peers(node: &Node, requested_ids: Vec<Uuid>) -> Vec<PeerRecord> {
+    let address = format!("{}:{}", node.address, node.port);
 
-    // convert the bundle into the protobuf generated bundle
-    //serialization of the protobuf to JSON string using protobuf-json-mapping
-    let payload = match protobuf_json_mapping::print_to_string(&bundle) {
-        Ok(json) => json.into_bytes(),
+    let mut stream = match TcpStream::connect(&address) {
+        Ok(s) => s,
         Err(e) => {
-            eprintln!("send_bundle failed to serialize bundle {} : {}", bundle.id, e);
+            eprintln!("request_connected_peers failed to connect to server: {}", e);
+            return Vec::new();
+        }
+    };
+
+    // send the request
+    let message =
+        serde_json::to_string(&ServerRequest::GetConnectedPeers(requested_ids)).unwrap_or_default();
+
+    if let Err(e) = stream.write_all(message.as_bytes()) {
+        eprintln!("request_connected_peers failed to send request: {}", e);
+        return Vec::new();
+    }
+
+    // read the response
+    let mut buffer = [0u8; 4096];
+    match stream.read(&mut buffer) {
+        Ok(n) => match serde_json::from_slice::<ServerResponse>(&buffer[..n]) {
+            Ok(ServerResponse::Peers(peers)) => peers,
+            Ok(ServerResponse::Error(e)) => {
+                eprintln!("request_connected_peers server error: {}", e);
+                Vec::new()
+            }
+            _ => Vec::new(),
+        },
+        Err(e) => {
+            eprintln!("request_connected_peers failed to read response: {}", e);
+            Vec::new()
+        }
+    }
+}
+
+pub fn send_bundle(source: &Node, bundle: Bundle) {
+    let peers = connect_to_peers(source);
+
+    if peers.is_empty() {
+        eprintln!("send_bundle: no connected peers");
+        return;
+    }
+
+    let proto_bundle = bundle.into();
+    let payload = match serialize(&proto_bundle) {
+        Some(bytes) => bytes,
+        None => {
+            eprintln!("send_bundle: failed to serialize bundle");
             return;
         }
     };
 
-    //iterate over eachh peer that the routing engine decided on
-    for peer in peers {
-        
-        //build the peer address from the ip and port
-        let address = format!("{}:{}", peer.address, peer.port);
-
-        //Open a direct TCP connection to the peer
-        let mut stream = match TcpStream::connect(address) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("send_bundle TCP connect to {} failed: {}", address, e);
-                return;
-            }
-        };
-
-        //sending with length prefix to let the receiver know exactly how many bytes to read
+    for (record, mut stream) in peers {
+        let address = format!("{}:{}", record.node.address, record.node.port);
+        // send length prefix then payload
         let len = payload.len() as u32;
         if let Err(e) = stream
-            .write_all(&len.to_be_bytes()) //writing the entire buffer to the tcp stream
-            .and_then(|_| stream.write_all(&payload)) // this only runs if the previous is Ok
+            .write_all(&len.to_be_bytes())
+            .and_then(|_| stream.write_all(&payload))
         {
             eprintln!("send_bundle failed to write to {}: {}", address, e);
-            return;
+            continue; // skip this peer, try the next
         }
-
-        //waiting for the ack peers
-        let mut ack = [0u8; 4]; //buffer allocation
-        match stream.read_exact(&mut ack) { //reads exactly 4 bytes from tcp stream into the ack buffer
-            Ok(_) if &ack == b"ack\n" => {}
-            Ok(_) => eprintln!("[send_bundle] unexpected ack from {}: {:?}", address, ack),
-            Err(e) => eprintln!("[send_bundle] failed to read ack from {}: {}", address, e),
+        let mut ack = [0u8; 4];
+        if let Err(e) = stream.read_exact(&mut ack) {
+            eprintln!("send_bundle: failed to read ack from {}: {}", address, e);
         }
+    }
+}
 
+pub fn receive_bundle(stream: &mut TcpStream) -> Option<Bundle> {
+    // read the length prefix (4 bytes)
+    let mut len_buf = [0u8; 4];
+    if let Err(e) = stream.read_exact(&mut len_buf) {
+        eprintln!("receive_bundle: failed to read length prefix: {}", e);
+        return None;
     }
 
+    let len = u32::from_be_bytes(len_buf) as usize;
+
+    // read exactly `len` bytes
+    let mut payload = vec![0u8; len];
+    if let Err(e) = stream.read_exact(&mut payload) {
+        eprintln!("receive_bundle: failed to read payload: {}", e);
+        return None;
+    }
+
+    // deserialize the protobuf bytes into a Bundle
+    let bundle = match deserialize(&payload) {
+        Some(proto_bundle) => Bundle::from(proto_bundle),
+        None => {
+            eprintln!("receive_bundle: failed to deserialize bundle");
+            return None;
+        }
+    };
+
+    // send ack back
+    if let Err(e) = stream.write_all(b"ack\n") {
+        eprintln!("receive_bundle: failed to send ack: {}", e);
+    }
+
+    Some(bundle)
 }
