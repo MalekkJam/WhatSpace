@@ -7,8 +7,8 @@ use uuid::Uuid; // id unique // for the date and time
 // fot he node structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
-    pub id: Uuid,         // unique identifier for the node
-    pub name : String,
+    pub id: Uuid, // unique identifier for the node
+    pub name: String,
     pub address: String,  // IP address of the node
     pub port: u16,        // port the node listens on
     pub peers: Vec<Uuid>, // IDs of known peer nodes
@@ -16,10 +16,10 @@ pub struct Node {
 
 // implementation of the node struct
 impl Node {
-    pub fn new(name : &str, address: &str, port: u16, peers: Vec<Uuid>) -> Self {
+    pub fn new(name: &str, address: &str, port: u16, peers: Vec<Uuid>) -> Self {
         Node {
             id: Uuid::new_v4(),
-            name : name.to_string(),
+            name: name.to_string(),
             address: address.to_string(),
             port,
             peers,
@@ -47,7 +47,7 @@ pub enum MsgStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BundleKind {
-    Data { msg: String },          // for the data bundle we need the message content
+    Data { msg: String },        // for the data bundle we need the message content
     Ack { ack_bundle_id: Uuid }, // for the acknowledgment bundle we need the id of the bundle
 }
 

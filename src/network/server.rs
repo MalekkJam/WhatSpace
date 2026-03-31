@@ -21,7 +21,7 @@ pub struct PeerRecord {
 }
 
 // Server memory of registered peers (keyed by node id).
-pub type PeerRegistry = Arc<Mutex<HashMap<Uuid, PeerRecord>>>;
+pub type PeerRegistry = Arc<Mutex<Vec<PeerRecord>>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
@@ -34,8 +34,34 @@ pub enum ServerRequest {
 #[serde(tag = "type", content = "data")]
 pub enum ServerResponse {
     Ok,
-    Peers(HashMap<u32, String>), // key=port, value=address
+    Peers(Vec<PeerRecord>), // List of connected peer records
     Error(String),
+}
+pub struct Server {
+    pub peer_registry: PeerRegistry,
+}
+
+impl Server {
+    pub fn new() -> Self {
+        Server {
+            peer_registry: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub fn start_server(&self) {
+        let listener = TcpListener::bind("127.0.0.1:8080").expect("Failed to bind to address");
+        println!("Server listening on 127.0.0.1:8080");
+
+        for stream in listener.incoming() {
+            match stream {
+                Ok(stream) => {
+                    let registry_clone = Arc::clone(&self.peer_registry);
+                    std::thread::spawn(move || handle_client(stream, registry_clone));
+                }
+                Err(e) => eprintln!("Failed to establish connection: {}", e),
+            }
+        }
+    }
 }
 
 pub fn handle_client(mut stream: TcpStream, registry: PeerRegistry) {
@@ -67,13 +93,10 @@ pub fn handle_client(mut stream: TcpStream, registry: PeerRegistry) {
             ServerRequest::Register(node) => {
                 node_id = Some(node.id);
                 if let Ok(mut map) = registry.lock() {
-                    map.insert(
-                        node.id,
-                        PeerRecord {
-                            node,
-                            status: ConnectionStatus::Connected,
-                        },
-                    );
+                    map.push(PeerRecord {
+                        node,
+                        status: ConnectionStatus::Connected,
+                    });
                     let _ = write_json(&mut stream, &ServerResponse::Ok);
                 } else {
                     let _ = write_json(
@@ -92,7 +115,7 @@ pub fn handle_client(mut stream: TcpStream, registry: PeerRegistry) {
     // Connection closed - mark node as disconnected
     if let Some(id) = node_id {
         if let Ok(mut map) = registry.lock() {
-            if let Some(record) = map.get_mut(&id) {
+            if let Some(record) = map.iter_mut().find(|r| r.node.id == id) {
                 record.status = ConnectionStatus::Disconnected;
                 println!("Node {} marked as disconnected", id);
             }
@@ -106,43 +129,46 @@ fn write_json(stream: &mut TcpStream, response: &ServerResponse) -> std::io::Res
     stream.write_all(&body)
 }
 
-pub fn start_server(registry: PeerRegistry) {
-    let listener = TcpListener::bind("127.0.0.1:8080").expect("Failed to bind to address");
-    println!("Server listening on 127.0.0.1:8080");
-
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                let registry_clone = Arc::clone(&registry);
-                std::thread::spawn(move || handle_client(stream, registry_clone));
-            }
-            Err(e) => eprintln!("Failed to establish connection: {}", e),
-        }
-    }
-}
-
 // Fetch specific requested nodes from registry and return address/port.
-fn get_connected_peers(
-    registry: &PeerRegistry,
-    requested_ids: &[Uuid],
-) -> HashMap<String, (u32, String)> {
-    match registry.lock() {
-        Ok(map) => requested_ids
-            .iter()
-            .filter_map(|id| {
-                map.get(id)
-                    .filter(|record| record.status == ConnectionStatus::Connected)
-                    .map(|record| (*id, (record.node.port, record.node.address.clone())))
-            })
-            .collect(),
-        Err(_) => HashMap::new(),
-    }
-}
+// fn get_requested_peers(registry: &PeerRegistry, requested_ids: &[Uuid]) -> HashMap<u32, String> {
+//     match registry.lock() {
+//         Ok(map) => requested_ids
+//             .iter()
+//             .filter_map(|id| {
+//                 map.get(id).map(|record| {
+//                     (record.node.port, record.node.address.clone())
+//                 })
+//             })
+//             .collect(),
+//         Err(_) => HashMap::new(),
+//     }
+// }
 
 // Optional: Get all nodes with their status (useful for debugging/monitoring)
 pub fn get_all_peers(registry: &PeerRegistry) -> Vec<PeerRecord> {
     match registry.lock() {
-        Ok(map) => map.values().cloned().collect(),
+        Ok(map) => map.iter().cloned().collect(),
         Err(_) => Vec::new(),
+    }
+}
+
+pub fn get_connected_peers(registry: &PeerRegistry, requested_ids: &[Uuid]) -> Vec<PeerRecord> {
+    match registry.lock() {
+        Ok(map) => map
+            .iter()
+            .filter(|record| {
+                record.status == ConnectionStatus::Connected
+                    && requested_ids.contains(&record.node.id)
+            })
+            .cloned()
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn verify_unique_name(registry: &PeerRegistry, name: &str) -> bool {
+    match registry.lock() {
+        Ok(map) => !map.iter().any(|record| record.node.name == name),
+        Err(_) => false,
     }
 }
