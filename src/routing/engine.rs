@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 pub struct RoutingEngine {
     pub node_id: Uuid,
-    pub graph: NetworkGraph, // for Dijkstra
+    pub graph: NetworkGraph,
 }
 
 impl RoutingEngine {
