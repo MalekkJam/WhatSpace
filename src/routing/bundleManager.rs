@@ -4,13 +4,13 @@ use crate::storage::StorageLayer;
 
 pub struct BundleManager {
     pub node_id: Uuid,
-    pub storage: Box<dyn StorageLayer>,
+    pub storage: StorageLayer,
 }
 
 impl BundleManager {
      // Function to get bundles stored at the node, used by the engine to get the summary vector
 
-    pub fn new (node_id: Uuid, storage : Box<dyn StorageLayer>) -> Self {
+    pub fn new (node_id: Uuid, storage : StorageLayer) -> Self {
         BundleManager { node_id, storage }
     }
 
