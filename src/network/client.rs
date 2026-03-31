@@ -1,6 +1,7 @@
 use crate::network::server::{
     get_connected_peers, PeerRecord, PeerRegistry, ServerRequest, ServerResponse,
 };
+use crate::network::bundle::ProtobufBundle;
 use crate::routing::model::{Bundle, Node};
 use crate::network::protobuf::{serialize,deserialize};
 use std::io::{Read, Write};
@@ -37,8 +38,8 @@ pub fn connect_to_server(node: &Node) -> bool {
 }
 
 //Connection Retry & Failure Handling
-// A helper function that attempts to establish a TCP connection multiple times 
-// with a delay between attempts. This prevents the node from giving up immediately 
+// A helper function that attempts to establish a TCP connection multiple times
+// with a delay between attempts. This prevents the node from giving up immediately
 // if the target peer is temporarily offline or experiencing high latency.
 fn connect_with_retry(address: &str, max_retries: u32, delay_secs: u64) -> Option<TcpStream> {
     for attempt in 1..=max_retries {
@@ -50,7 +51,7 @@ fn connect_with_retry(address: &str, max_retries: u32, delay_secs: u64) -> Optio
             }
             Err(e) => {
                 eprintln!("Network Warning: Connection to {} failed (Attempt {}/{}): {}", address, attempt, max_retries, e);
-                
+
                 // If we haven't reached the max retries, wait and try again
                 if attempt < max_retries {
                     println!("Network: Retrying in {} seconds...", delay_secs);
@@ -61,13 +62,13 @@ fn connect_with_retry(address: &str, max_retries: u32, delay_secs: u64) -> Optio
             }
         }
     }
-    
+
     //If all attempts fail, we log it and return None instead of crashing
     eprintln!("Network Error: Exhausted all {} attempts to connect to {}. Node is unreachable.", max_retries, address);
     None
 }
 
-pub fn connect_to_peer(source: &Node, destination: &Node) -> Option<TcpStream> {
+fn connect_to_peer(source: &Node, destination: &Node) -> Option<TcpStream> {
     let addr = format!("{}:{}", destination.address, destination.port);
     match connect_with_retry(&addr, 3, 2) {
         Some(stream) => {
@@ -134,7 +135,7 @@ fn request_connected_peers(node: &Node, requested_ids: Vec<Uuid>) -> Vec<PeerRec
     }
 }
 
-pub fn send_bundle(source: &Node, bundle: Bundle) {
+pub fn send_bundle(source: &Node, bundle: &Bundle) {
     let peers = connect_to_peers(source);
 
     if peers.is_empty() {
@@ -142,7 +143,7 @@ pub fn send_bundle(source: &Node, bundle: Bundle) {
         return;
     }
 
-    let proto_bundle = bundle.into();
+    let proto_bundle = ProtobufBundle::from(bundle);
     let payload = match serialize(&proto_bundle) {
         Some(bytes) => bytes,
         None => {

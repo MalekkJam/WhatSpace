@@ -63,10 +63,11 @@ impl Server {
         }
     }
 
-
-
+    pub fn get_node(&self, id: Uuid) -> Option<PeerRecord> {
+        let peers = self.peer_registry.lock().unwrap();
+        peers.iter().find(|peer| peer.node.id == id).cloned()
+    }
 }
-
 
 pub fn handle_client(mut stream: TcpStream, registry: PeerRegistry) {
     let mut node_id: Option<Uuid> = None;
@@ -133,21 +134,6 @@ fn write_json(stream: &mut TcpStream, response: &ServerResponse) -> std::io::Res
     stream.write_all(&body)
 }
 
-// Fetch specific requested nodes from registry and return address/port.
-// fn get_requested_peers(registry: &PeerRegistry, requested_ids: &[Uuid]) -> HashMap<u32, String> {
-//     match registry.lock() {
-//         Ok(map) => requested_ids
-//             .iter()
-//             .filter_map(|id| {
-//                 map.get(id).map(|record| {
-//                     (record.node.port, record.node.address.clone())
-//                 })
-//             })
-//             .collect(),
-//         Err(_) => HashMap::new(),
-//     }
-// }
-
 // Optional: Get all nodes with their status (useful for debugging/monitoring)
 pub fn get_all_peers(registry: &PeerRegistry) -> Vec<PeerRecord> {
     match registry.lock() {
@@ -176,14 +162,13 @@ pub fn verify_unique_name(registry: &PeerRegistry, name: &str) -> bool {
         Err(_) => false,
     }
 }
-
 // Disconnect from the server, mark all nodes as disconnected, and gracefully shutdown
 pub fn disconnect_server(registry: &PeerRegistry) {
     // Mark all nodes as disconnected
     match registry.lock() {
         Ok(mut map) => {
             for record in map.iter_mut() {
-                record.status = ConnectionStatus::Disconnected;// change the status to disconnected 
+                record.status = ConnectionStatus::Disconnected; // change the status to disconnected
                 println!("Node {} marked as disconnected", record.node.id);
             }
             println!("Server disconnected all nodes marked as disconnected");
@@ -192,7 +177,7 @@ pub fn disconnect_server(registry: &PeerRegistry) {
             eprintln!("Failed to acquire lock on registry: {}", e);
         }
     }
-    
+
     // Gracefully shutdown the server process (equivalent to Ctrl+C)
     println!("Shutting down server");
     std::process::exit(0); // ctrl+c
