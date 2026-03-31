@@ -1,18 +1,16 @@
 use uuid::Uuid;
 use crate::routing::model::{Bundle, BundleKind};
+use crate::storage::StorageLayer;
 
 pub struct BundleManager {
     pub node_id: Uuid,
-    pub storage: StorageLayer,
+    pub storage: Box<dyn StorageLayer>,
 }
 
 impl BundleManager {
      // Function to get bundles stored at the node, used by the engine to get the summary vector
 
-    pub fn new (node_id: Uuid,
-        //storage : StorageLayer
-        )
-         -> Self {
+    pub fn new (node_id: Uuid, storage : Box<dyn StorageLayer>) -> Self {
         BundleManager { node_id, storage }
     }
 
@@ -45,7 +43,7 @@ impl BundleManager {
     /// Returns false if the Ack was already known (duplicate).
     pub fn handle_incoming_ack(&mut self, ack: &Bundle) -> bool {
         // Deduplication — have we already seen this ACK?
-        if self.storage.get_bundle(&ack.id).is_some() {
+        if self.storage.get_bundle(ack.id).is_some() {
             return false;
         }
         // Save the ACK to propagate it to other peers
@@ -61,7 +59,7 @@ impl BundleManager {
 
     /// Checks if a bundle is already known — used during anti-entropy
     /// to avoid resending bundles already present at a peer.
-    pub fn has_bundle(&self, bundle_id: &str) -> bool {
+    pub fn has_bundle(&self, bundle_id: Uuid) -> bool {
         self.storage.get_bundle(bundle_id).is_some()
     }
 }
