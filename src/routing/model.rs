@@ -14,7 +14,8 @@ pub struct Node {
     pub address: String,  // IP address of the node
     pub port: u16,        // port the node listens on
     pub peers: Vec<Uuid>, // IDs of known peer nodes
-    pub routing_engine: RoutingEngine,
+    #[serde(skip)]
+    pub routing_engine: Option<RoutingEngine>, // cause we do not want to initialize the routing_engine when we initialize  the source and destination in the Bundle Struct
 }
 
 // implementation of the node struct
@@ -26,16 +27,19 @@ impl Node {
             name: name.to_string(),
             address: address.to_string(),
             port,
-            peers,
-            routing_engine: RoutingEngine::new(new_id, peers),
+            peers: peers.clone(),
+            routing_engine: Some(RoutingEngine::new(new_id, peers)),
         }
     }
 
-    pub fn main(&self) {
-        // Connect to server
-        connect_to_server(self);
+    pub fn main(&self, bundle: &Bundle) {
+        connect_to_server(self.clone()); // TODO NEKES AWAIT
         // TODO To be called only wheb we want to send
-        self.routing_engine.route_bundle(bundle);
+        if let Some(routing_engine) = &self.routing_engine {
+            // NOTE: route_bundle is async, needs to be called in an async context
+            // TODO: Implement async handling here
+            // routing_engine.route_bundle(bundle).await;
+        }
     }
 }
 

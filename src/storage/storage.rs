@@ -2,6 +2,7 @@ use uuid::Uuid;
 use std::fmt;
 use std::path::{PathBuf};
 use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
 use std::fs;
 
 use crate::routing::model::{Bundle};
@@ -36,6 +37,7 @@ impl fmt::Display for StorageError {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageLayer {
     pub storage_dir: PathBuf,
     pub bundles: Vec<Bundle>,
@@ -191,7 +193,7 @@ impl StorageLayer {
         } else {
             eprintln!("{}", StorageError::NotFound(bundle_id.to_string()));
             false //no bundle with the given id was found
-            
+
         }
     }
 

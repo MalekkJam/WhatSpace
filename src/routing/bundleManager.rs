@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
 use crate::routing::model::{Bundle, BundleKind};
 use crate::storage::StorageLayer;
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BundleManager {
     pub node_id: Uuid,
     pub storage: StorageLayer,
@@ -17,8 +19,8 @@ impl BundleManager {
         }
     }
 
-    pub fn get_bundles_from_node(&self, node_id: Uuid) -> Vec<Uuid> {
-        self.storage.get_bundles_by_node(node_id)
+    pub fn get_bundles_from_node(&self) -> Vec<Bundle> {
+        self.storage.get_all_bundles()
     }
 
     // Function to get a bundle by its id, used by the SCF to fetch the full bundle before forwarding

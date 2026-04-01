@@ -1,74 +1,70 @@
 use super::bundleManager::BundleManager;
-use super::epidemic::NetworkGraph;
 use super::model::Bundle;
-use crate::network::client::send_bundle;
+use crate::network::client::{request_peer_sv, send_bundle};
 use crate::network::server::Server;
-use crate::routing::bundleManager;
 use crate::routing::model::BundleKind;
-use pathfinding::directed::dijkstra::dijkstra;
-use std::collections::HashMap;
-use std::time::Duration;
 use uuid::Uuid;
 
-// TODO : Add a get_node for the network layer
-
+#[derive(Debug, Clone)]
 pub struct RoutingEngine {
     pub node_id: Uuid,
-    pub graph: NetworkGraph,
+    pub peers: Vec<Uuid>,
     pub server: Server,
     pub bundle_manager: BundleManager,
 }
 
 impl RoutingEngine {
-    pub fn new(node_id: Uuid) -> Self {
+    pub fn new(node_id: Uuid, peers: Vec<Uuid>) -> Self {
         RoutingEngine {
-            node_id: node_id,
-            graph: NetworkGraph::new(),
+            node_id,
+            peers,
             server: Server::new(),
             bundle_manager: BundleManager::new(node_id),
         }
     }
 
     // Summary vector management
-    pub fn get_summary_vector(&self, bundle_manager: &BundleManager) -> Vec<Uuid> {
-        return bundle_manager.get_bundles_from_node(self.node_id); // this function calls the storage layer to get the bundles stored
+    pub fn get_summary_vector(&self, bundle_manager: &BundleManager) -> Vec<Bundle> {
+        return bundle_manager.get_bundles_from_node(); // this function calls the storage layer to get the bundles stored
     }
 
-    pub fn anti_entropy(&self, local_sv: &[Uuid], peer_sv: &[Uuid]) -> Vec<Uuid> {
-        // compare local_sv with peer_sv and at the end peer_sv should be equal to local_sv in terms of content
-        let mut missing_on_peer: Vec<Uuid> = vec![];
-        for &i in local_sv.iter() {
-            if !peer_sv.contains(&i) {
+    pub fn anti_entropy<'a>(&self, local_sv: &'a [Bundle], peer_sv: &[Uuid]) -> Vec<&'a Bundle> {
+        let mut missing_on_peer: Vec<&'a Bundle> = vec![];
+        for i in local_sv.iter() {
+            if !peer_sv.contains(&i.id) {
                 missing_on_peer.push(i);
             }
         }
         missing_on_peer
     }
 
-    // Dijkstra to find next hop
-    // pub fn find_next_hop(&self, destination: Uuid) -> Option<Uuid> {
-    //     let (path, _) = dijkstra(
-    //         &self.node_id,
-    //         |node| self.graph.neighbors(node),
-    //         |node| *node == destination,
-    //     )?;
-    //     path.get(1).copied()
-    // }
+    pub fn get_peer_summary_vector(&self, peer_addr: &str, peer_port: u16) -> Vec<Uuid> {
+        let destination_adress = format!("{}:{}", peer_addr.to_string(), peer_port);
+        match request_peer_sv(self.node_id, destination_adress) {
+            Ok(ids) => ids,
+            Err(e) => {
+                eprintln!(
+                    "[{}] could not get SV from {}: {}",
+                    self.node_id, peer_addr, e
+                );
+                vec![]
+            }
+        }
+    }
 
-    // TODO ; should be replaced with simple epidemic propagation
-
-    // Main routing decision
-    pub async fn route_bundle(&self, bundle: &mut Bundle, retry_interval: Duration) {
+    pub async fn route_bundle(&mut self, bundle: &mut Bundle) {
         if matches!(bundle.kind, BundleKind::Ack { .. }) {
-            if (bundle.source.id == self.node_id) {
+            if bundle.source.id == self.node_id {
                 self.bundle_manager.delete_bundle(bundle.id);
                 return;
             }
 
             self.bundle_manager.handle_incoming_ack(bundle);
-            // Call the network layer
-            let source = get_node(self.node_id);
-            send_bundle(source, bundle);
+
+            for peer in self.server.get_connected_peers(&self.peers) {
+                let destination_adress = format!("{}:{}", peer.node.address, peer.node.port);
+                send_bundle(peer.node.id, bundle, destination_adress);
+            }
             return;
         }
 
@@ -78,10 +74,10 @@ impl RoutingEngine {
             let ack = Bundle::new_ack(bundle);
             self.bundle_manager.save_bundle(&ack);
             self.bundle_manager.delete_bundle(bundle.id);
-            // Call the network layer
-            // for peer in network.get_connected_peers() {
-            //     network.send_bundle(peer, &ack);
-            // }
+            for peer in self.server.get_connected_peers(&self.peers) {
+                let destination_adress = format!("{}:{}", peer.node.address, peer.node.port);
+                send_bundle(peer.node.id, &ack, destination_adress);
+            }
             return;
         }
 
@@ -92,25 +88,27 @@ impl RoutingEngine {
             return;
         }
 
-        // Find next hop if not we stay here
-        // TODO : repalce find_next_hop(djikstra) with the new epidemic propagation
-        let Some(next_hop) = self.find_next_hop(bundle.destination.id) else {
-            bundle.shipment_status = super::model::MsgStatus::Pending;
-            self.bundle_manager.save_bundle(bundle);
-            self.forward_loop(self.bundle_manager, retry_interval).await;
-            return;
-        };
-
-        // next hop found and we want to send to it missing bundles
+        // propagate to all my peers
+        let local_sv = self.get_summary_vector(&self.bundle_manager);
+        let pending_bundles: Vec<Bundle> = local_sv
+            .into_iter()
+            .filter(|b| b.shipment_status == super::model::MsgStatus::Pending)
+            .collect();
+        for connected_peer in self.server.get_connected_peers(&self.peers) {
+            let peer_sv = self.get_peer_summary_vector(
+                connected_peer.node.address.as_str(),
+                connected_peer.node.port,
+            );
+            // Then compare against what the peer already has
+            let to_forward = self.anti_entropy(&pending_bundles, &peer_sv);
+            let destination_adress = format!(
+                "{}:{}",
+                connected_peer.node.address, connected_peer.node.port
+            );
+            for bundle in to_forward {
+                send_bundle(self.node_id, bundle, destination_adress.clone());
+            }
+        }
         bundle.shipment_status = super::model::MsgStatus::InTransit;
-        let local_sv = self.get_summary_vector(self.bundle_manager);
-        // let peer_sv = network.get_peer_summary_vector(next_hop);
-        // let to_forward = self.anti_entropy(&local_sv, &peer_sv);
-        // call for network layer
-        // for id in  to_forward {
-        //     if let Some(b) = bundle_manager.get(id) {
-        //         network.send_bundle(next_hop, &b)
-        //     }
-        // }
     }
 }
