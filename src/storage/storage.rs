@@ -197,6 +197,24 @@ impl StorageLayer {
         }
     }
 
+    /// Met à jour un bundle existant (remplace l'entrée par ID).
+    /// Retourne false si le bundle n'existe pas.
+    pub fn update_bundle(&mut self, bundle: &Bundle) -> bool {
+        if let Some(existing) = self.bundles.iter_mut().find(|b| b.id == bundle.id) {
+            *existing = bundle.clone();
+            match self.save_to_file() {
+                Ok(_) => true,
+                Err(e) => {
+                    eprintln!("Error updating bundle: {}", e);
+                    false
+                }
+            }
+        } else {
+            eprintln!("{}", StorageError::NotFound(bundle.id.to_string()));
+            false
+        }
+    }
+
     //Issue #12
     //iterates through the shared file, checks expiration and removes expired bundles
     pub fn cleanup_expired_bundles(&mut self) -> usize {

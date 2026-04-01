@@ -37,6 +37,10 @@ impl BundleManager {
         self.storage.save_bundle(bundle)
     }
 
+    pub fn update_bundle(&mut self, bundle: &Bundle) -> bool {
+        self.storage.update_bundle(bundle)
+    }
+
     // Function to get all bundles stored at the node, used by the SCF to drop expired bundles
     pub fn all(&self) -> Vec<Bundle> {
         self.storage.get_all_bundles()

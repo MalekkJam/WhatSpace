@@ -14,7 +14,7 @@
           "msg": "hello"
         }
       },
-      "shipment_status": "InTransit",
+      "shipment_status": "Delivered",
       "source": {
         "address": "127.0.0.1",
         "id": "9d6d2094-c66a-4f0e-81c9-c02dcfe92d4a",
@@ -22,7 +22,7 @@
         "peers": [],
         "port": 8080
       },
-      "timestamp": "2026-04-01T21:01:32.425193Z",
+      "timestamp": "2026-04-01T21:01:32Z",
       "ttl": 3600
     }
   ]

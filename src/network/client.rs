@@ -1,8 +1,7 @@
 use crate::network::bundle::ProtobufBundle;
 use crate::network::protobuf::{deserialize, serialize};
-use crate::network::server::{ServerRequest, ServerResponse};
+use crate::network::server::ServerRequest;
 use crate::routing::model::{Bundle, BundleKind, Node};
-use crate::routing::RoutingEngine;
 use serde_json;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -184,92 +183,5 @@ pub fn request_peer_sv(
     match serde_json::from_slice::<BundleKind>(&buffer[..n])? {
         BundleKind::SummaryVector { ids } => Ok(ids),
         _ => Err("unexpected response from peer".into()),
-    }
-}
-
-pub fn respond_peer_sv(stream: &mut TcpStream, routing_engine: &RoutingEngine) {
-    let mut buffer = [0u8; 4096];
-
-    let n = match stream.read(&mut buffer) {
-        Ok(n) => n,
-        Err(e) => {
-            eprintln!("respond_peer_sv: failed to read request: {}", e);
-            return;
-        }
-    };
-
-    match serde_json::from_slice::<BundleKind>(&buffer[..n]) {
-        Ok(BundleKind::RequestSV { from }) => {
-            println!(
-                "[{}] received RequestSV from {}",
-                routing_engine.node_id, from
-            );
-
-            let ids: Vec<Uuid> = routing_engine
-                .get_summary_vector(&routing_engine.bundle_manager)
-                .iter()
-                .map(|b| b.id)
-                .collect();
-
-            let response = BundleKind::SummaryVector { ids };
-            let payload = match serde_json::to_vec(&response) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("respond_peer_sv: failed to serialize response: {}", e);
-                    return;
-                }
-            };
-
-            // Send length prefix then payload
-            let len = payload.len() as u32;
-            if let Err(e) = stream.write_all(&len.to_be_bytes()) {
-                eprintln!("respond_peer_sv: failed to send length prefix: {}", e);
-                return;
-            }
-
-            if let Err(e) = stream.write_all(&payload) {
-                eprintln!("respond_peer_sv: failed to send SummaryVector: {}", e);
-            }
-        }
-        _ => {
-            eprintln!("respond_peer_sv: unexpected message, expected RequestSV");
-        }
-    }
-}
-
-pub fn handle_peer_to_peer(mut stream: TcpStream, routing_engine: &RoutingEngine) {
-    loop {
-        // Inspect the first byte without consuming it to choose the right handler.
-        // JSON control messages start with '{', while bundle transfers use a 4-byte length prefix.
-        let mut first = [0u8; 1];
-        let n = match stream.peek(&mut first) {
-            Ok(n) => n,
-            Err(e) => {
-                eprintln!("handle_peer_to_peer: failed to peek stream: {}", e);
-                break;
-            }
-        };
-
-        if n == 0 {
-            break;
-        }
-
-        if first[0] == b'{' {
-            respond_peer_sv(&mut stream, routing_engine);
-            continue;
-        }
-
-        match receive_bundle(&mut stream) {
-            Some(bundle) => {
-                println!(
-                    "[{}] received bundle {} from {}",
-                    routing_engine.node_id, bundle.id, bundle.source.id
-                );
-            }
-            None => {
-                eprintln!("handle_peer_to_peer: failed to receive bundle");
-                break;
-            }
-        }
     }
 }
