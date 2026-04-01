@@ -1,12 +1,11 @@
-use uuid::Uuid;
-use std::fmt;
-use std::path::{PathBuf};
-use serde_json::{Value, json};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::fmt;
 use std::fs;
+use std::path::PathBuf;
+use uuid::Uuid;
 
-use crate::routing::model::{Bundle};
-
+use crate::routing::model::Bundle;
 
 // Error handling strategy
 // The bundle manager will match on this enum to deide wether to retry or log
@@ -45,93 +44,100 @@ pub struct StorageLayer {
 }
 
 impl StorageLayer {
+    fn load_bundles_from_file(storage_dir: &PathBuf) -> Vec<Bundle> {
+        let file_path = storage_dir.join("bundles.json");
 
-    pub fn new(directory: String, capacity: usize) -> Self {  // initialisation au demarrage 
-        let storage_dir = PathBuf::from(&directory);// constructeur prend chemin repertoir et retourne une instance jsonfilestorage 
-        // convertit le string en PathBuf qui est un type rust optimisé pour les chemins 
+        if !file_path.exists() {
+            return Vec::new();
+        }
+
+        match fs::read_to_string(&file_path) {
+            Ok(content) => match serde_json::from_str::<Value>(&content) {
+                Ok(json_value) => json_value
+                    .get("bundles")
+                    .and_then(|v| v.as_array())
+                    .map(|bundles_array| {
+                        bundles_array
+                            .iter()
+                            .filter_map(|bundle_json| {
+                                serde_json::from_value::<Bundle>(bundle_json.clone()).ok()
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                Err(e) => {
+                    eprintln!("Error parsing bundles.json: {}", e);
+                    Vec::new()
+                }
+            },
+            Err(e) => {
+                eprintln!("Error the reading of bundles.json didn't work : {}", e);
+                Vec::new()
+            }
+        }
+    }
+
+    fn refresh_from_disk(&mut self) {
+        self.bundles = Self::load_bundles_from_file(&self.storage_dir);
+    }
+
+    pub fn new(directory: String, capacity: usize) -> Self {
+        // initialisation au demarrage
+        let storage_dir = PathBuf::from(&directory); // constructeur prend chemin repertoir et retourne une instance jsonfilestorage
+                                                     // convertit le string en PathBuf qui est un type rust optimisé pour les chemins
 
         // SI LE REPERTOIRE N'EXISTE PAS IN LE CREE
         if !storage_dir.exists() {
             fs::create_dir_all(&storage_dir).expect("Failed to create storage directory");
             println!("created storzge directory at {}", storage_dir.display());
-            }
+        }
 
-            // on va construirte tout le chemain complet 
-            // bundels/bundles.json
-            let file_path = storage_dir.join("bundles.json");
-
-            // si le fichier existe on va charger les bundles existants deja 
-            let bundles = if file_path.exists() {
-
-               match fs::read_to_string(&file_path) { // si le fichier eciste on charge les bundles
-                // essaie de lire le fichier en entier comme texte !!!!!!!  et retourne le content 
-                Ok(content) => {
-                    match serde_json::from_str::<Value>(&content) {// si ok on parse le json en structure value qui est un arbre generique 
-                        Ok(json_value) => { // nouveau match car la serialisation peut echouer 
-                            if let Some(bundles_array) = json_value.get("bundles").and_then(|v| v.as_array()) {
-                                bundles_array
-                                    .iter()
-                                    .filter_map(|bundle_json| {
-                                        serde_json::from_value::<Bundle>(bundle_json.clone()).ok()
-                                    })
-                                    .collect()
-                            } else {
-                                Vec::new()
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error parsing bundles.json: {}", e);
-                            Vec::new()
-                        }
-                    }
-                }
-                Err(e) => {
-                    // affiche l'erreur et retiurne un vecteur vide 
-                    eprintln!("Error the reading of bundles.json didn't work : {}", e);
-                    Vec::new()
-                }
-            }
-        } else {
-            Vec::new()
-        };
-        
-        StorageLayer { storage_dir, bundles, capacity }
+        // on va construirte tout le chemain complet
+        // bundels/bundles.json
+        let bundles = Self::load_bundles_from_file(&storage_dir);
+        StorageLayer {
+            storage_dir,
+            bundles,
+            capacity,
+        }
     }
 
-
-
     pub fn save_to_file(&self) -> Result<(), StorageError> {
-        let json_bundles: Vec<Value> = self.bundles
+        let json_bundles: Vec<Value> = self
+            .bundles
             .iter()
             .filter_map(|bundle| serde_json::to_value(bundle).ok())
             .collect();
-        
+
         let json_content = json!({ "bundles": json_bundles });
-        
+
         let file_path = self.storage_dir.join("bundles.json");
-        match fs::write(&file_path, serde_json::to_string_pretty(&json_content).unwrap()) {
-            Ok(_) => {
-                println!(" Bundles saved to {}", file_path.display());
-                Ok(())
-            }
+        match fs::write(
+            &file_path,
+            serde_json::to_string_pretty(&json_content).unwrap(),
+        ) {
+            Ok(_) => Ok(()),
             Err(e) => {
-                let error = StorageError::SerializationError(format!("Failed to write bundles.json: {}", e));
+                let error = StorageError::SerializationError(format!(
+                    "Failed to write bundles.json: {}",
+                    e
+                ));
                 eprintln!("{}", error);
                 Err(error)
             }
         }
     }
 
-
-
     // Issue #11
-    // Duplicate detection logic 
+    // Duplicate detection logic
     pub fn save_bundle(&mut self, bundle: &Bundle) -> bool {
+        self.refresh_from_disk();
+        self.cleanup_expired_bundles();
         // Check if we have reached storage capacity
         if self.bundles.len() >= self.capacity {
-            let err= StorageError::StorageFull(bundle.id.to_string());
+            let err = StorageError::StorageFull(bundle.id.to_string());
             eprintln!("{}", err);
-            return false; // Storage is full, reject new bundle and abort saving
+            return false; // Storage is  full, reject new bundle and abort saving
         }
 
         //check if the bundle ID already exists in the shared file bundle.json
@@ -155,12 +161,14 @@ impl StorageLayer {
     }
 
     //Retrieve a specific bundle
-    pub fn get_bundle(&self, bundle_id: Uuid) -> Option<Bundle> {
+    pub fn get_bundle(&mut self, bundle_id: Uuid) -> Option<Bundle> {
+        self.refresh_from_disk();
         self.bundles.iter().find(|b| b.id == bundle_id).cloned()
     }
 
     //Retrieve all bundles
-    pub fn get_all_bundles(&self) -> Vec<Bundle> {
+    pub fn get_all_bundles(&mut self) -> Vec<Bundle> {
+        self.refresh_from_disk();
         self.bundles.clone()
     }
 
@@ -176,6 +184,7 @@ impl StorageLayer {
     // Issue #13
     //Implement bundle deletion after delivery
     pub fn delete_bundle(&mut self, bundle_id: Uuid) -> bool {
+        self.refresh_from_disk();
         let initial_len = self.bundles.len();
 
         // keep all bundles except the one matching the id we want to delete
@@ -193,13 +202,13 @@ impl StorageLayer {
         } else {
             eprintln!("{}", StorageError::NotFound(bundle_id.to_string()));
             false //no bundle with the given id was found
-
         }
     }
 
     //Issue #12
     //iterates through the shared file, checks expiration and removes expired bundles
     pub fn cleanup_expired_bundles(&mut self) -> usize {
+        self.refresh_from_disk();
         let initial_len = self.bundles.len();
 
         //keep only bundles that are not expired
@@ -209,16 +218,18 @@ impl StorageLayer {
         let removed_count = initial_len - self.bundles.len();
 
         if removed_count > 0 {
-        //save_to_file() returns a Result (Success or Error). 
-        // Rust's safety rules require us to acknowledge this Result.
-        // By assigning it to the underscore wildcard (let _ =), we tell the 
-        // compiler: "I am intentionally ignoring the return value because 
-        // save_to_file() already prints its own error messages."
+            //save_to_file() returns a Result (Success or Error).
+            // Rust's safety rules require us to acknowledge this Result.
+            // By assigning it to the underscore wildcard (let _ =), we tell the
+            // compiler: "I am intentionally ignoring the return value because
+            // save_to_file() already prints its own error messages."
             let _ = self.save_to_file();
-            println!("Storage: Cleaned up {} expired bundle(s) in a single disk write.", removed_count);
+            println!(
+                "Storage: Cleaned up {} expired bundle(s) in a single disk write.",
+                removed_count
+            );
         }
 
         removed_count
     }
-
 }

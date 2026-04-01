@@ -89,14 +89,13 @@ impl Server {
     }
 
     pub fn get_connected_peers(&self, requested_ids: &[Uuid]) -> Vec<PeerRecord> {
-        eprintln!("DEBUG registry contents: {:?}", self.peer_registry.lock());
-        eprintln!("DEBUG requested_ids: {:?}", requested_ids);
         match self.peer_registry.lock() {
             Ok(map) => map
                 .iter()
                 .filter(|record| {
                     record.status == ConnectionStatus::Connected
-                    // ✅ temporarily remove the requested_ids filter
+                        && (requested_ids.is_empty() // empty = return all
+                        || requested_ids.contains(&record.node.id)) // ✅ filter by designated peers
                 })
                 .cloned()
                 .collect(),
@@ -107,17 +106,10 @@ impl Server {
     pub fn handle_client(&self, mut stream: TcpStream) {
         let mut node_id: Option<Uuid> = None;
         let mut buffer = [0_u8; 4096];
-        eprintln!("we are in the handle client");
         loop {
             let n = match stream.read(&mut buffer) {
-                Ok(0) => {
-                    println!("DEBUG: got EOF (client closed connection)");
-                    break;
-                } // Connection closed by client
-                Ok(n) => {
-                    println!("DEBUG: read {} bytes", n);
-                    n
-                }
+                Ok(0) => break, // Connection closed by client
+                Ok(n) => n,
                 Err(e) => {
                     eprintln!("Failed to read from client: {}", e);
                     break;
@@ -137,12 +129,18 @@ impl Server {
             match request {
                 ServerRequest::Register(node) => {
                     node_id = Some(node.id);
-                    eprintln!("WE ARE IN THE SERVERREQUEST");
+
                     if let Ok(mut map) = self.peer_registry.lock() {
                         map.push(PeerRecord {
                             node,
                             status: ConnectionStatus::Connected,
                         });
+                        for record in map.iter() {
+                            eprintln!(
+                                "  - '{}' ({}) — {:?}",
+                                record.node.name, record.node.id, record.status
+                            );
+                        }
                         let _ = write_json(&mut stream, &ServerResponse::Ok);
                     } else {
                         let _ = write_json(

@@ -21,14 +21,15 @@ pub struct Node {
 // implementation of the node struct
 impl Node {
     pub fn new(name: &str, address: &str, port: u16, peers: Vec<Uuid>) -> Self {
-        let new_id = Uuid::new_v4();
+        let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
+        let id = Uuid::new_v5(&namespace, name.as_bytes());
         Node {
-            id: new_id,
+            id,
             name: name.to_string(),
             address: address.to_string(),
             port,
             peers: peers.clone(),
-            routing_engine: Some(RoutingEngine::new(new_id, peers, name.to_string())),
+            routing_engine: Some(RoutingEngine::new(id, peers, name.to_string())),
         }
     }
 }

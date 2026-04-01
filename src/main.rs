@@ -7,17 +7,27 @@ mod storage;
 use clap::Parser;
 use cli::cli::Cli;
 use cli::handler::handle_command;
-use network::client::connect_to_server;
 use network::server::Server;
 use std::io::{self, Write};
+use uuid::Uuid;
+
+fn node_id(name: &str) -> Uuid {
+    let namespace = Uuid::parse_str("6ba7b810-9dad-11d1-80b4-00c04fd430c8").unwrap();
+    Uuid::new_v5(&namespace, name.as_bytes())
+}
 
 #[tokio::main]
 async fn main() {
-    let node1 = Node::new("alice", "127.0.0.1", 8080, vec![]);
-    let node2 = Node::new("bob", "127.0.0.1", 8081, vec![]);
-    let node3 = Node::new("carol", "127.0.0.1", 8082, vec![]);
-    let node4 = Node::new("syrine", "127.0.0.1", 8083, vec![]);
-    let mut nodes = vec![node1, node2, node3, node4];
+    let alice_id = node_id("alice");
+    let bob_id = node_id("bob");
+    let carol_id = node_id("carol");
+    let syrine_id = node_id("syrine");
+
+    let alice = Node::new("alice", "127.0.0.1", 9001, vec![bob_id]);
+    let bob = Node::new("bob", "127.0.0.1", 9002, vec![carol_id]);
+    let carol = Node::new("carol", "127.0.0.1", 9003, vec![syrine_id]);
+    let syrine = Node::new("syrine", "127.0.0.1", 9004, vec![]);
+    let mut nodes = vec![alice, bob, carol, syrine];
 
     let args: Vec<String> = std::env::args().collect();
 

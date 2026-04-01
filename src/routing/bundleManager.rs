@@ -15,16 +15,16 @@ impl BundleManager {
     pub fn new(node_id: Uuid, name: String) -> Self {
         BundleManager {
             node_id,
-            storage: StorageLayer::new(format!("./bundles/{}", name), 2),
+            storage: StorageLayer::new(format!("./bundles/{}", name), 100),
         }
     }
 
-    pub fn get_bundles_from_node(&self) -> Vec<Bundle> {
+    pub fn get_bundles_from_node(&mut self) -> Vec<Bundle> {
         self.storage.get_all_bundles()
     }
 
     // Function to get a bundle by its id, used by the SCF to fetch the full bundle before forwarding
-    pub fn get(&self, bundle_id: Uuid) -> Option<Bundle> {
+    pub fn get(&mut self, bundle_id: Uuid) -> Option<Bundle> {
         self.storage.get_bundle(bundle_id)
     }
 
@@ -37,8 +37,15 @@ impl BundleManager {
         self.storage.save_bundle(bundle)
     }
 
+    pub fn upsert_bundle(&mut self, bundle: &Bundle) -> bool {
+        if self.storage.get_bundle(bundle.id).is_some() {
+            self.storage.delete_bundle(bundle.id);
+        }
+        self.storage.save_bundle(bundle)
+    }
+
     // Function to get all bundles stored at the node, used by the SCF to drop expired bundles
-    pub fn all(&self) -> Vec<Bundle> {
+    pub fn all(&mut self) -> Vec<Bundle> {
         self.storage.get_all_bundles()
     }
 
@@ -62,7 +69,7 @@ impl BundleManager {
 
     /// Checks if a bundle is already known — used during anti-entropy
     /// to avoid resending bundles already present at a peer.
-    pub fn has_bundle(&self, bundle_id: Uuid) -> bool {
+    pub fn has_bundle(&mut self, bundle_id: Uuid) -> bool {
         self.storage.get_bundle(bundle_id).is_some()
     }
 }
