@@ -12,6 +12,7 @@ pathfinding = "4.15.0"
 tokio = { version = "1", features = ["full"] }
 protobuf = "3"
 protobuf-json-mapping = "3.7.2"
+clap = { version = "4", features = ["derive"] }
 
 [build-dependencies]
 protobuf-codegen = "3"

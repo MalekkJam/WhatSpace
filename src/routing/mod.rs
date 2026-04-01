@@ -8,4 +8,3 @@ pub mod scf;
 
 
 pub use engine::RoutingEngine;
-pub use epidemic::NetworkGraph;

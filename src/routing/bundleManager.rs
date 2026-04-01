@@ -1,21 +1,26 @@
-use uuid::Uuid;
 use crate::routing::model::{Bundle, BundleKind};
 use crate::storage::StorageLayer;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BundleManager {
     pub node_id: Uuid,
-    pub storage: Box<dyn StorageLayer>,
+    pub storage: StorageLayer,
 }
 
 impl BundleManager {
-     // Function to get bundles stored at the node, used by the engine to get the summary vector
+    // Function to get bundles stored at the node, used by the engine to get the summary vector
 
-    pub fn new (node_id: Uuid, storage : Box<dyn StorageLayer>) -> Self {
-        BundleManager { node_id, storage }
+    pub fn new(node_id: Uuid, name: String) -> Self {
+        BundleManager {
+            node_id,
+            storage: StorageLayer::new(format!("./bundles/{}", name), 2),
+        }
     }
 
-    pub fn get_bundles_from_node(&self, node_id: Uuid) -> Vec<Uuid> {
-        self.storage.get_bundles_by_node(node_id)
+    pub fn get_bundles_from_node(&self) -> Vec<Bundle> {
+        self.storage.get_all_bundles()
     }
 
     // Function to get a bundle by its id, used by the SCF to fetch the full bundle before forwarding
@@ -28,10 +33,9 @@ impl BundleManager {
         self.storage.delete_bundle(bundle_id)
     }
 
-    pub fn save_bundle(&mut self,bundle : &Bundle) -> bool {
+    pub fn save_bundle(&mut self, bundle: &Bundle) -> bool {
         self.storage.save_bundle(bundle)
     }
-
 
     // Function to get all bundles stored at the node, used by the SCF to drop expired bundles
     pub fn all(&self) -> Vec<Bundle> {
@@ -51,8 +55,7 @@ impl BundleManager {
         if let BundleKind::Ack { ack_bundle_id } = &ack.kind {
             self.storage.delete_bundle(*ack_bundle_id);
             self.storage.save_bundle(ack) // always save ack so it continues to propagate
-        }
-        else {
+        } else {
             false
         }
     }

@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // for serializing and deserializing Rust data structures efficiently and generically, in the doc we can find the Derive Macros
-use uuid::Uuid; // id unique // for the date and time
+use uuid::Uuid;
+
+use crate::{network::client::connect_to_server, routing::RoutingEngine}; // id unique // for the date and time
 
 // this file contains the data models
 
@@ -12,17 +14,21 @@ pub struct Node {
     pub address: String,  // IP address of the node
     pub port: u16,        // port the node listens on
     pub peers: Vec<Uuid>, // IDs of known peer nodes
+    #[serde(skip)]
+    pub routing_engine: Option<RoutingEngine>, // cause we do not want to initialize the routing_engine when we initialize  the source and destination in the Bundle Struct
 }
 
 // implementation of the node struct
 impl Node {
     pub fn new(name: &str, address: &str, port: u16, peers: Vec<Uuid>) -> Self {
+        let new_id = Uuid::new_v4();
         Node {
-            id: Uuid::new_v4(),
+            id: new_id,
             name: name.to_string(),
             address: address.to_string(),
             port,
-            peers,
+            peers: peers.clone(),
+            routing_engine: Some(RoutingEngine::new(new_id, peers, name.to_string())),
         }
     }
 }
@@ -47,8 +53,12 @@ pub enum MsgStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BundleKind {
-    Data { msg: String },        // for the data bundle we need the message content
-    Ack { ack_bundle_id: Uuid }, // for the acknowledgment bundle we need the id of the bundle
+    Data { msg: String }, // for the data bundle we need the message content
+    Ack { ack_bundle_id: Uuid },
+    // new: A asks B for its summary vector
+    RequestSV { from: Uuid },
+    // new: B replies with its list of bundle IDs
+    SummaryVector { ids: Vec<Uuid> }, // for the acknowledgment bundle we need the id of the bundle
 }
 
 //Bundle

@@ -1,73 +1,83 @@
+use crate::routing::model::Node;
+mod cli;
 mod network;
 mod routing;
 mod storage;
-use crate::network::protobuf::{deserialize,serialize};
-use crate::routing::model::{Bundle, BundleKind, MsgStatus, Node};
-use chrono::Utc;
-use uuid::Uuid;
 
-use storage::JsonFileStorage;
+use clap::Parser;
+use cli::cli::Cli;
+use cli::handler::handle_command;
+use network::client::connect_to_server;
+use network::server::Server;
+use std::io::{self, Write};
 
-fn main() {
-    // creer le,ficheir de storage automatiquement au lancer de l'app
-    let storage = Box ::new(JsonFileStorage ::new("./bundles".to_string(), 10));
+#[tokio::main]
+async fn main() {
+    let node1 = Node::new("alice", "127.0.0.1", 8080, vec![]);
+    let node2 = Node::new("bob", "127.0.0.1", 8081, vec![]);
+    let node3 = Node::new("carol", "127.0.0.1", 8082, vec![]);
+    let node4 = Node::new("syrine", "127.0.0.1", 8083, vec![]);
+    let mut nodes = vec![node1, node2, node3, node4];
 
-    test_protobuf();
-}
+    let args: Vec<String> = std::env::args().collect();
 
-fn test_protobuf() {
-    let node_a = Node {
-        id: Uuid::new_v4(),
-        name: "node_a".to_string(),
-        address: "127.0.0.1".to_string(),
-        port: 8081,
-        peers: vec![],
-    };
+    if args.len() > 1 && (args[1] == "serve" || args[1] == "server") {
+        println!("Starting registry server on 127.0.0.1:8080");
+        let server = Server::new();
+        server.start_server();
+        return;
+    }
 
-    let node_b = Node {
-        id: Uuid::new_v4(),
-        name: "node_b".to_string(),
-        address: "127.0.0.1".to_string(),
-        port: 8082,
-        peers: vec![],
-    };
+    // One-shot mode: subcommands passed directly on the command line.
+    if args.len() > 1 {
+        let cli = Cli::parse();
+        handle_command(cli.command, &mut nodes).await;
+        return;
+    }
 
-    let bundle = Bundle {
-        id: Uuid::new_v4(),
-        source: node_a,
-        destination: node_b,
-        timestamp: Utc::now(),
-        ttl: 3600,
-        kind: BundleKind::Data {
-            msg: "hello from protobuf test".to_string(),
-        },
-        shipment_status: MsgStatus::Pending,
-    };
+    // Interactive mode: keeps node state across many commands in one process.
+    println!("Entering interactive mode. Type 'help' for examples, 'exit' to quit.");
+    loop {
+        print!("ws> ");
+        let _ = io::stdout().flush();
 
-    println!("Original bundle id: {}", bundle.id);
-
-    // serialize
-    let proto_bundle = crate::network::bundle::ProtobufBundle::from(bundle);
-    let bytes = match serialize(&proto_bundle) {
-        Some(b) => b,
-        None => {
-            println!("serialization failed");
-            return;
+        let mut line = String::new();
+        if io::stdin().read_line(&mut line).is_err() {
+            eprintln!("Failed to read input");
+            continue;
         }
-    };
 
-    println!("Serialized {} bytes", bytes.len());
-
-    // deserialize
-    let recovered = match deserialize(&bytes) {
-        Some(b) => Bundle::from(b),
-        None => {
-            println!("deserialization failed");
-            return;
+        let input = line.trim();
+        if input.is_empty() {
+            continue;
         }
-    };
 
-    println!("Recovered bundle id: {}", recovered.id);
-    println!("Payload: {:?}", recovered.kind);
-    println!("Protobuf test OK!");
+        if input.eq_ignore_ascii_case("exit") || input.eq_ignore_ascii_case("quit") {
+            println!("Bye.");
+            break;
+        }
+
+        if input.eq_ignore_ascii_case("help") {
+            println!("Commands:");
+            println!("  all");
+            println!("  status <name>");
+            println!("  peers <name> list-peers");
+            println!("  peers <name> add <peer-name>");
+            println!("  peers <name> remove <peer-name>");
+            println!("  send --from <name> --to <name> --message <msg> --ttl <seconds>");
+            println!("  start <name> --server <ip:port>");
+            println!("  stop <name>");
+            continue;
+        }
+
+        let argv = std::iter::once("WhatSpace".to_string())
+            .chain(input.split_whitespace().map(|s| s.to_string()))
+            .collect::<Vec<String>>();
+
+        match Cli::try_parse_from(argv) {
+            Ok(cli) => handle_command(cli.command, &mut nodes).await,
+            Err(e) => println!("{}", e),
+        }
+    }
+    // _registry_stream drops here — server correctly marks node as disconnected
 }
