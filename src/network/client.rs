@@ -10,8 +10,8 @@ use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
-pub fn connect_to_server(node: Node) -> bool {
-    let address = format!("{}:{}", node.address, node.port);
+pub fn connect_to_server(node: Node, server_address: &str) -> bool {
+    let address = server_address.to_string();
     match connect_with_retry(&address, 3, 2) {
         Some(mut stream) => {
             println!("Connecté à {}", address);

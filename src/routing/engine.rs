@@ -8,18 +8,20 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct RoutingEngine {
     pub node_id: Uuid,
+    pub node_name: String,
     pub peers: Vec<Uuid>,
     pub server: Server,
     pub bundle_manager: BundleManager,
 }
 
 impl RoutingEngine {
-    pub fn new(node_id: Uuid, peers: Vec<Uuid>) -> Self {
+    pub fn new(node_id: Uuid, node_name: String, peers: Vec<Uuid>) -> Self {
         RoutingEngine {
             node_id,
+            node_name: node_name.clone(),
             peers,
             server: Server::new(),
-            bundle_manager: BundleManager::new(node_id),
+            bundle_manager: BundleManager::new(node_id, node_name),
         }
     }
 
@@ -54,11 +56,17 @@ impl RoutingEngine {
 
     pub async fn route_bundle(&mut self, bundle: &mut Bundle) {
         if matches!(bundle.kind, BundleKind::Ack { .. }) {
-            if bundle.source.id == self.node_id {
+            // ACK flow is reverse of DATA flow:
+            // source = destination of original data, destination = source of original data.
+            // Stop propagation once ACK reaches the original source node.
+            if bundle.destination.id == self.node_id {
+                bundle.shipment_status = super::model::MsgStatus::Delivered;
+                self.bundle_manager.handle_incoming_ack(bundle);
                 self.bundle_manager.delete_bundle(bundle.id);
                 return;
             }
 
+            // Intermediate nodes store and forward ACKs to continue reverse propagation.
             self.bundle_manager.handle_incoming_ack(bundle);
 
             for peer in self.server.get_connected_peers(&self.peers) {
@@ -68,12 +76,16 @@ impl RoutingEngine {
             return;
         }
 
+        if !self.bundle_manager.has_bundle(bundle.id) {
+            self.bundle_manager.save_bundle(bundle);
+        }
+
         //  Check if we are the destination
         if self.node_id == bundle.destination.id {
             bundle.shipment_status = super::model::MsgStatus::Delivered;
+            self.bundle_manager.update_bundle(bundle);
             let ack = Bundle::new_ack(bundle);
             self.bundle_manager.save_bundle(&ack);
-            self.bundle_manager.delete_bundle(bundle.id);
             for peer in self.server.get_connected_peers(&self.peers) {
                 let destination_adress = format!("{}:{}", peer.node.address, peer.node.port);
                 send_bundle(peer.node.id, &ack, destination_adress);
@@ -110,5 +122,6 @@ impl RoutingEngine {
             }
         }
         bundle.shipment_status = super::model::MsgStatus::InTransit;
+        self.bundle_manager.update_bundle(bundle);
     }
 }

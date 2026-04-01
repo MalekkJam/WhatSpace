@@ -2,11 +2,9 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "node")]
-
-#[derive(Parser)]
-struct Cli {
+pub struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    pub command: NodeCommands,
 }
 
 
@@ -21,7 +19,7 @@ pub enum NodeCommands {
         name: String,
 
         /// Server address to register with (ip:port)
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "127.0.0.1:8080")]
         server: String,
     },
     /// Stop the node server
@@ -83,16 +81,16 @@ pub enum PeerCommands {
         ids: Vec<String>,
     },
 
-    /// Add a peer UUID to your local peer list
+    /// Add a peer node (by name) to your local peer list
     Add {
-        /// UUID of the peer to add
-        id: String,
+        /// Name of the peer node to add
+        name: String,
     },
 
-    /// Remove a peer UUID from your local peer list
+    /// Remove a peer node (by name) from your local peer list
     Remove {
-        /// UUID of the peer to remove
-        id: String,
+        /// Name of the peer node to remove
+        name: String,
     },
 }
 

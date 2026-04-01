@@ -22,18 +22,19 @@ pub struct Node {
 impl Node {
     pub fn new(name: &str, address: &str, port: u16, peers: Vec<Uuid>) -> Self {
         let new_id = Uuid::new_v4();
+        let node_name = name.to_string();
         Node {
             id: new_id,
-            name: name.to_string(),
+            name: node_name.clone(),
             address: address.to_string(),
             port,
             peers: peers.clone(),
-            routing_engine: Some(RoutingEngine::new(new_id, peers)),
+            routing_engine: Some(RoutingEngine::new(new_id, node_name, peers)),
         }
     }
 
     pub fn main(&self, bundle: &Bundle) {
-        connect_to_server(self.clone()); // TODO NEKES AWAIT
+        connect_to_server(self.clone(), "127.0.0.1:8080"); // TODO NEKES AWAIT
         // TODO To be called only wheb we want to send
         if let Some(routing_engine) = &self.routing_engine {
             // NOTE: route_bundle is async, needs to be called in an async context

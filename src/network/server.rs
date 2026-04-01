@@ -172,27 +172,3 @@ pub fn verify_unique_name(registry: &PeerRegistry, name: &str) -> bool {
         Err(_) => false,
     }
 }
-<<<<<<< 65-create-and-implement-node
-// Disconnect from the server, mark all nodes as disconnected, and gracefully shutdown
-pub fn disconnect_server(registry: &PeerRegistry) {
-    // Mark all nodes as disconnected
-    match registry.lock() {
-        Ok(mut map) => {
-            for record in map.iter_mut() {
-                record.status = ConnectionStatus::Disconnected; // change the status to disconnected
-                println!("Node {} marked as disconnected", record.node.id);
-            }
-            println!("Server disconnected all nodes marked as disconnected");
-        }
-        Err(e) => {
-            eprintln!("Failed to acquire lock on registry: {}", e);
-        }
-    }
-
-    // Gracefully shutdown the server process (equivalent to Ctrl+C)
-    println!("Shutting down server");
-    std::process::exit(0); // ctrl+c
-}
-
-=======
->>>>>>> develop

@@ -6,16 +6,18 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BundleManager {
     pub node_id: Uuid,
+    pub node_name: String,
     pub storage: StorageLayer,
 }
 
 impl BundleManager {
     // Function to get bundles stored at the node, used by the engine to get the summary vector
 
-    pub fn new(node_id: Uuid) -> Self {
+    pub fn new(node_id: Uuid, node_name: String) -> Self {
         BundleManager {
             node_id,
-            storage: StorageLayer::new("./bundles".to_string(), 10),
+            node_name: node_name.clone(),
+            storage: StorageLayer::new(format!("./bundles/{}", node_name), 10),
         }
     }
 
@@ -35,6 +37,14 @@ impl BundleManager {
 
     pub fn save_bundle(&mut self, bundle: &Bundle) -> bool {
         self.storage.save_bundle(bundle)
+    }
+
+    pub fn update_bundle(&mut self, bundle: &Bundle) -> bool {
+        self.storage.update_bundle(bundle)
+    }
+
+    pub fn cleanup_expired_bundles(&mut self) -> usize {
+        self.storage.cleanup_expired_bundles()
     }
 
     // Function to get all bundles stored at the node, used by the SCF to drop expired bundles

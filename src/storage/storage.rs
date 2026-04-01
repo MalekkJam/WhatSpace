@@ -164,6 +164,23 @@ impl StorageLayer {
         self.bundles.clone()
     }
 
+    // Update an existing bundle in storage (used for status transitions).
+    pub fn update_bundle(&mut self, bundle: &Bundle) -> bool {
+        if let Some(existing) = self.bundles.iter_mut().find(|b| b.id == bundle.id) {
+            *existing = bundle.clone();
+            match self.save_to_file() {
+                Ok(_) => true,
+                Err(e) => {
+                    eprintln!("Error saving updated bundle to file: {}", e);
+                    false
+                }
+            }
+        } else {
+            eprintln!("{}", StorageError::NotFound(bundle.id.to_string()));
+            false
+        }
+    }
+
     //retrieve bundles originating from a specific node
     pub fn get_bundles_by_node(&self, node_id: Uuid) -> Vec<Uuid> {
         self.bundles

@@ -8,7 +8,7 @@ use uuid::Uuid;
 pub fn store(bundle: &mut Bundle, bundle_manager: &mut BundleManager) {
     // update the bundle status to pending before storing it
     bundle.shipment_status = MsgStatus::Pending;
-    bundle_manager.storage.save_bundle(bundle);
+    bundle_manager.save_bundle(bundle);
 }
 
 impl RoutingEngine {

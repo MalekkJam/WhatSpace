@@ -1,13 +1,8 @@
-use std::collections::HashMap;
-use std::time::Duration;
-
 use uuid::Uuid;
 
 use crate::cli::nodeCli::{NodeCommands, PeerCommands};
-use crate::network::server::get_connected_peers;
-use crate::routing::engine::RoutingEngine;
+use crate::network::client::connect_to_server;
 use crate::routing::model::{Bundle, BundleKind, Node};
-use crate::routing::scf::store;
 
 
 fn find_node<'a>(nodes: &'a [Node], name: &str) -> &'a Node {
@@ -21,16 +16,25 @@ fn find_node<'a>(nodes: &'a [Node], name: &str) -> &'a Node {
 }
 
 fn find_node_mut<'a>(nodes: &'a mut [Node], name: &str) -> &'a mut Node {
-    nodes.iter_mut().find(|n| n.name == name).unwrap_or_else(|| {
-        eprintln!("No node named '{}' found. Available nodes:", name);
-        for n in nodes {
-            eprintln!("  - {}", n.name);
-        }
-        std::process::exit(1);
-    })
+    if let Some(index) = nodes.iter().position(|n| n.name == name) {
+        return &mut nodes[index];
+    }
+
+    eprintln!("No node named '{}' found. Available nodes:", name);
+    for n in nodes.iter() {
+        eprintln!("  - {}", n.name);
+    }
+    std::process::exit(1);
 }
 
 pub async fn handle_command(command: NodeCommands, nodes: &mut Vec<Node>) {
+    // Keep storage clean on every command cycle.
+    for node in nodes.iter_mut() {
+        if let Some(engine) = node.routing_engine.as_mut() {
+            engine.bundle_manager.cleanup_expired_bundles();
+        }
+    }
+
     match command {
         NodeCommands::All => {
             if nodes.is_empty() {
@@ -50,7 +54,7 @@ pub async fn handle_command(command: NodeCommands, nodes: &mut Vec<Node>) {
             let node = find_node(nodes, &name);
 
             // just register with the registry server
-            let connected = connect_to_server(node);
+            let connected = connect_to_server(node.clone(), &server);
             if !connected {
                 eprintln!("Failed to connect node {} to server", node.name);
                 return;
@@ -63,13 +67,20 @@ pub async fn handle_command(command: NodeCommands, nodes: &mut Vec<Node>) {
 
             println!("Stopping node {}...", node.name);
 
-            // Uses current server API: marks peers disconnected and exits process.
-            disconnect_server(&node.routing_engine.server.peer_registry);
+            if let Some(engine) = node.routing_engine.as_ref() {
+                engine.server.disconnect_server();
+            } else {
+                eprintln!("Node {} has no routing engine", node.name);
+            }
         }
 
         NodeCommands::Status { name } => {
             let node = find_node(nodes, &name);
-            let stored = node.routing_engine.bundle_manager.all().len();
+            let stored = node
+                .routing_engine
+                .as_ref()
+                .map(|engine| engine.bundle_manager.all().len())
+                .unwrap_or(0);
 
             println!("ID : {}", node.id);
             println!("Name : {}", node.name);
@@ -79,24 +90,64 @@ pub async fn handle_command(command: NodeCommands, nodes: &mut Vec<Node>) {
         }
 
         NodeCommands::Send { from, to, message, ttl } => {
-            // look up destination first before borrowing sender as mutable
-            let destination = find_node(&nodes, &to).clone();
-            let sender = find_node_mut(&mut nodes, &from);
+            if from == to {
+                eprintln!("Sender and destination must be different nodes.");
+                return;
+            }
 
-            let bundle = Bundle::new(
+            let sender_idx = nodes.iter().position(|n| n.name == from).unwrap_or_else(|| {
+                eprintln!("No node named '{}' found.", from);
+                std::process::exit(1);
+            });
+            let dest_idx = nodes.iter().position(|n| n.name == to).unwrap_or_else(|| {
+                eprintln!("No node named '{}' found.", to);
+                std::process::exit(1);
+            });
+
+            let (sender, destination) = if sender_idx < dest_idx {
+                let (left, right) = nodes.split_at_mut(dest_idx);
+                (&mut left[sender_idx], &mut right[0])
+            } else {
+                let (left, right) = nodes.split_at_mut(sender_idx);
+                (&mut right[0], &mut left[dest_idx])
+            };
+
+            let mut bundle = Bundle::new(
                 sender.clone(),
-                destination,
+                destination.clone(),
                 BundleKind::Data { msg: message },
                 ttl,
             );
-        
-            sender.routing_engine.route_bundle(bundle);
+
+            // Source persists and forwards.
+            if let Some(engine) = sender.routing_engine.as_mut() {
+                engine.route_bundle(&mut bundle).await;
+            }
+
+            // Simulate destination reception in this interactive single-process demo.
+            if let Some(engine) = destination.routing_engine.as_mut() {
+                engine.route_bundle(&mut bundle).await;
+            }
+
+            // Auto-generate ACK and route it back to source in-session.
+            let mut ack = Bundle::new_ack(&bundle);
+            if let Some(engine) = sender.routing_engine.as_mut() {
+                engine.route_bundle(&mut ack).await;
+            }
         }
 
         NodeCommands::Peers { name, command } => {
-            let node = find_node_mut(nodes, &name);
+            let node_idx = nodes.iter().position(|n| n.name == name).unwrap_or_else(|| {
+                eprintln!("No node named '{}' found. Available nodes:", name);
+                for n in nodes.iter() {
+                    eprintln!("  - {}", n.name);
+                }
+                std::process::exit(1);
+            });
 
-            handle_peer_command(command, node);        
+            let mut node = nodes.remove(node_idx);
+            handle_peer_command(command, &mut node, nodes);
+            nodes.insert(node_idx, node);
         }
 
         #[cfg(feature = "debug")]
@@ -112,7 +163,7 @@ pub async fn handle_command(command: NodeCommands, nodes: &mut Vec<Node>) {
     }
 }
 
-fn handle_peer_command(command: PeerCommands, node: &mut Node) {
+fn handle_peer_command(command: PeerCommands, node: &mut Node, nodes: &[Node]) {
     match command {
         PeerCommands::ListPeers => {
             if node.peers.is_empty() {
@@ -131,18 +182,23 @@ fn handle_peer_command(command: PeerCommands, node: &mut Node) {
                 .map(|s| Uuid::parse_str(s).expect("Invalid UUID"))
                 .collect();
 
-            let peers = get_connected_peers(&node.routing_engine.server.peer_registry, &uuids);
-            println!("Connected peers found: {}", peers.len());
-            for p in peers {
-                println!(
-                " - {} | {} | {}:{}",
-                p.node.name, p.node.id, p.node.address, p.node.port
-                );
+            if let Some(engine) = node.routing_engine.as_ref() {
+                let peers = engine.server.get_connected_peers(&uuids);
+                println!("Connected peers found: {}", peers.len());
+                for p in peers {
+                    println!(
+                        " - {} | {} | {}:{}",
+                        p.node.name, p.node.id, p.node.address, p.node.port
+                    );
+                }
+            } else {
+                eprintln!("Node {} has no routing engine", node.name);
             }
         }
 
-        PeerCommands::Add { id } => {
-            let uuid = Uuid::parse_str(&id).expect("Invalid UUID");
+        PeerCommands::Add { name } => {
+            let peer = find_node(nodes, &name);
+            let uuid = peer.id;
             if node.peers.contains(&uuid) {
                 println!("{} already knows peer {}.", node.name, uuid);
             } else {
@@ -151,8 +207,9 @@ fn handle_peer_command(command: PeerCommands, node: &mut Node) {
             }
         }
 
-        PeerCommands::Remove { id } => {
-            let uuid = Uuid::parse_str(&id).expect("Invalid UUID");
+        PeerCommands::Remove { name } => {
+            let peer = find_node(nodes, &name);
+            let uuid = peer.id;
             let before = node.peers.len();
             node.peers.retain(|p| *p != uuid);
             if node.peers.len() < before {

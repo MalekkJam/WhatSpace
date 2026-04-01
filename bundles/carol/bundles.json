@@ -1,0 +1,62 @@
+{
+  "bundles": [
+    {
+      "destination": {
+        "address": "127.0.0.1",
+        "id": "ec53aac5-940b-4de2-8563-db3fc314571c",
+        "name": "carol",
+        "peers": [
+          "12b797e5-27a7-42c9-bce5-1eae2563d666"
+        ],
+        "port": 8082
+      },
+      "id": "23d32074-a654-419e-9a94-6790aa83feba",
+      "kind": {
+        "Data": {
+          "msg": "Yarraaraab"
+        }
+      },
+      "shipment_status": "Delivered",
+      "source": {
+        "address": "127.0.0.1",
+        "id": "195e9e12-a771-454a-8c3c-c097a4f6631d",
+        "name": "alice",
+        "peers": [
+          "12b797e5-27a7-42c9-bce5-1eae2563d666"
+        ],
+        "port": 8080
+      },
+      "timestamp": "2026-04-01T17:58:47.265650913Z",
+      "ttl": 120
+    },
+    {
+      "destination": {
+        "address": "127.0.0.1",
+        "id": "195e9e12-a771-454a-8c3c-c097a4f6631d",
+        "name": "alice",
+        "peers": [
+          "12b797e5-27a7-42c9-bce5-1eae2563d666"
+        ],
+        "port": 8080
+      },
+      "id": "03483679-77f8-47e9-b79e-70dbbc49e924",
+      "kind": {
+        "Ack": {
+          "ack_bundle_id": "23d32074-a654-419e-9a94-6790aa83feba"
+        }
+      },
+      "shipment_status": "Pending",
+      "source": {
+        "address": "127.0.0.1",
+        "id": "ec53aac5-940b-4de2-8563-db3fc314571c",
+        "name": "carol",
+        "peers": [
+          "12b797e5-27a7-42c9-bce5-1eae2563d666"
+        ],
+        "port": 8082
+      },
+      "timestamp": "2026-04-01T17:58:47.272288655Z",
+      "ttl": 120
+    }
+  ]
+}
