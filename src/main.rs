@@ -6,23 +6,38 @@ mod storage;
 
 use clap::Parser;
 use cli::cli::Cli;
+use cli::cli::NodeCommands;
 use cli::handler::handle_command;
-use network::client::connect_to_server;
 use network::server::Server;
 use std::io::{self, Write};
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() {
-    let node1 = Node::new("alice", "127.0.0.1", 8080, vec![]);
-    let node2 = Node::new("bob", "127.0.0.1", 8081, vec![]);
-    let node3 = Node::new("carol", "127.0.0.1", 8082, vec![]);
-    let node4 = Node::new("syrine", "127.0.0.1", 8083, vec![]);
-    let mut nodes = vec![node1, node2, node3, node4];
+    let mut nodes = vec![
+        Node::new("alice", "127.0.0.1", 9001, vec![]), // this creates node alice on a port that does not conflict with the registry server
+        Node::new("bob", "127.0.0.1", 9002, vec![]), // this creates node bob as the second simulation participant
+        Node::new("carol", "127.0.0.1", 9003, vec![]), // this creates node carol as the third simulation participant
+    ];
+
+    let all_ids: Vec<_> = nodes.iter().map(|node| node.id).collect(); // this captures node ids once to build a default full-mesh peer topology
+    for node in &mut nodes {
+        node.peers = all_ids
+            .iter()
+            .copied()
+            .filter(|peer_id| *peer_id != node.id)
+            .collect(); // this sets each node's peer list to every other node id for immediate epidemic routing
+        if let Some(engine) = &node.routing_engine {
+            if let Ok(mut guard) = engine.lock() {
+                guard.peers = node.peers.clone(); // this synchronizes routing engine peer list with node-level peer configuration
+            }
+        }
+    }
 
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() > 1 && (args[1] == "serve" || args[1] == "server") {
-        println!("Starting registry server on 127.0.0.1:8080");
+        println!("Starting registry server on 127.0.0.1:9100"); // this prints the new default registry endpoint to avoid 8080 conflicts
         let server = Server::new();
         server.start_server();
         return;
@@ -31,7 +46,14 @@ async fn main() {
     // One-shot mode: subcommands passed directly on the command line.
     if args.len() > 1 {
         let cli = Cli::parse();
+        let keep_alive = matches!(&cli.command, NodeCommands::Start { .. }); // this detects node startup commands that must keep process alive to preserve listener and registry stream
         handle_command(cli.command, &mut nodes).await;
+        if keep_alive {
+            println!("Node process is running. Press Ctrl+C to stop."); // this informs operator that start command intentionally keeps process alive
+            loop {
+                tokio::time::sleep(Duration::from_secs(3600)).await; // this keeps the process alive so the node remains reachable in multi-terminal simulations
+            }
+        }
         return;
     }
 

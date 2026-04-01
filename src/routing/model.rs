@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // for serializing and deserializing Rust data structures efficiently and generically, in the doc we can find the Derive Macros
+use std::sync::{Arc, Mutex}; // this import enables shared mutable routing engine access across cli and listener threads
 use uuid::Uuid;
 
-use crate::{network::client::connect_to_server, routing::RoutingEngine}; // id unique // for the date and time
+use crate::routing::RoutingEngine; // this model only needs the routing engine type for the optional node field
 
 // this file contains the data models
 
@@ -15,20 +16,24 @@ pub struct Node {
     pub port: u16,        // port the node listens on
     pub peers: Vec<Uuid>, // IDs of known peer nodes
     #[serde(skip)]
-    pub routing_engine: Option<RoutingEngine>, // cause we do not want to initialize the routing_engine when we initialize  the source and destination in the Bundle Struct
+    pub routing_engine: Option<Arc<Mutex<RoutingEngine>>>, // this shared engine instance keeps cli commands and listener processing in one consistent state
 }
 
 // implementation of the node struct
 impl Node {
     pub fn new(name: &str, address: &str, port: u16, peers: Vec<Uuid>) -> Self {
-        let new_id = Uuid::new_v4();
+        let new_id = Uuid::new_v5(&Uuid::NAMESPACE_DNS, name.as_bytes()); // derive a stable id from the node name so separate processes agree on peer identities
         Node {
             id: new_id,
             name: name.to_string(),
             address: address.to_string(),
             port,
             peers: peers.clone(),
-            routing_engine: Some(RoutingEngine::new(new_id, peers, name.to_string())),
+            routing_engine: Some(Arc::new(Mutex::new(RoutingEngine::new(
+                new_id,
+                peers,
+                name.to_string(),
+            )))), // this wraps the routing engine in Arc<Mutex<_>> so multiple threads can mutate one source of truth
         }
     }
 }
@@ -75,6 +80,11 @@ pub struct Bundle {
 //implementation of the bundle struct
 impl Bundle {
     pub fn new(source: Node, destination: Node, kind: BundleKind, ttl: u64) -> Self {
+        let mut source = source; // this creates an owned mutable source node to sanitize non-serializable runtime fields
+        source.routing_engine = None; // this avoids recursively embedding runtime engines into bundle payloads and storage snapshots
+        let mut destination = destination; // this creates an owned mutable destination node to sanitize runtime fields
+        destination.routing_engine = None; // this keeps bundle payload lightweight and deterministic across processes
+
         // for the new bundle we need the source, destination, kind and ttl
         Bundle {
             id: Uuid::new_v4(), // generate a unique id for the bundle using uuid version 4 and convert it to string before storing it in the json file

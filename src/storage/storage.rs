@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-use crate::routing::model::{Bundle};
+use crate::routing::model::{Bundle, MsgStatus};
 
 
 // Error handling strategy
@@ -162,6 +162,22 @@ impl StorageLayer {
     //Retrieve all bundles
     pub fn get_all_bundles(&self) -> Vec<Bundle> {
         self.bundles.clone()
+    }
+
+    pub fn update_bundle_status(&mut self, bundle_id: Uuid, new_status: MsgStatus) -> bool {
+        if let Some(bundle) = self.bundles.iter_mut().find(|bundle| bundle.id == bundle_id) {
+            bundle.shipment_status = new_status; // this mutates the in-memory status so lifecycle transitions are reflected immediately
+            match self.save_to_file() {
+                Ok(_) => true, // this persists status transitions to disk so cli status and anti-entropy stay consistent across restarts
+                Err(e) => {
+                    eprintln!("Error saving bundle status update: {}", e); // this logs file-write failures to help diagnose storage issues
+                    false // this reports persistence failure to caller for retry logic
+                }
+            }
+        } else {
+            eprintln!("{}", StorageError::NotFound(bundle_id.to_string())); // this logs missing bundle ids when status updates target unknown entries
+            false // this reports that requested bundle id is absent from local storage
+        }
     }
 
     //retrieve bundles originating from a specific node

@@ -1,6 +1,7 @@
-use crate::routing::model::{Bundle, BundleKind};
+use crate::routing::model::{Bundle, BundleKind, MsgStatus};
 use crate::storage::StorageLayer;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,9 +14,12 @@ impl BundleManager {
     // Function to get bundles stored at the node, used by the engine to get the summary vector
 
     pub fn new(node_id: Uuid, name: String) -> Self {
+        let storage_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("bundles")
+            .join(&name); // this anchors node storage under the project bundles directory regardless current working directory
         BundleManager {
             node_id,
-            storage: StorageLayer::new(format!("./bundles/{}", name), 2),
+            storage: StorageLayer::new(storage_dir.to_string_lossy().to_string(), 200), // this keeps bundle persistence consistent across interactive and one-shot terminal runs
         }
     }
 
@@ -35,6 +39,10 @@ impl BundleManager {
 
     pub fn save_bundle(&mut self, bundle: &Bundle) -> bool {
         self.storage.save_bundle(bundle)
+    }
+
+    pub fn update_status(&mut self, bundle_id: Uuid, status: MsgStatus) -> bool {
+        self.storage.update_bundle_status(bundle_id, status) // this delegates lifecycle status persistence to the storage layer
     }
 
     // Function to get all bundles stored at the node, used by the SCF to drop expired bundles

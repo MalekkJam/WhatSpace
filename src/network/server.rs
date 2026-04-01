@@ -49,8 +49,8 @@ impl Server {
     }
 
     pub fn start_server(&self) {
-        let listener = TcpListener::bind("127.0.0.1:8080").expect("Failed to bind to address");
-        println!("Server listening on 127.0.0.1:8080");
+        let listener = TcpListener::bind("127.0.0.1:9100").expect("Failed to bind to address"); // this binds registry on a port that avoids common local conflicts on 8080
+        println!("Server listening on 127.0.0.1:9100"); // this prints the effective registry endpoint for startup verification
 
         for stream in listener.incoming() {
             match stream {
@@ -89,14 +89,12 @@ impl Server {
     }
 
     pub fn get_connected_peers(&self, requested_ids: &[Uuid]) -> Vec<PeerRecord> {
-        eprintln!("DEBUG registry contents: {:?}", self.peer_registry.lock());
-        eprintln!("DEBUG requested_ids: {:?}", requested_ids);
         match self.peer_registry.lock() {
             Ok(map) => map
                 .iter()
                 .filter(|record| {
                     record.status == ConnectionStatus::Connected
-                    // ✅ temporarily remove the requested_ids filter
+                        && (requested_ids.is_empty() || requested_ids.contains(&record.node.id)) // return only requested connected peers, or all connected peers when caller provides no ids
                 })
                 .cloned()
                 .collect(),
@@ -137,12 +135,16 @@ impl Server {
             match request {
                 ServerRequest::Register(node) => {
                     node_id = Some(node.id);
-                    eprintln!("WE ARE IN THE SERVERREQUEST");
                     if let Ok(mut map) = self.peer_registry.lock() {
-                        map.push(PeerRecord {
-                            node,
-                            status: ConnectionStatus::Connected,
-                        });
+                        if let Some(existing) = map.iter_mut().find(|record| record.node.id == node.id) {
+                            existing.node = node; // refresh node metadata so address and peer list stay up to date on reconnect
+                            existing.status = ConnectionStatus::Connected; // mark existing record as alive instead of creating duplicates
+                        } else {
+                            map.push(PeerRecord {
+                                node,
+                                status: ConnectionStatus::Connected,
+                            }); // insert new node into registry the first time we see this id
+                        }
                         let _ = write_json(&mut stream, &ServerResponse::Ok);
                     } else {
                         let _ = write_json(

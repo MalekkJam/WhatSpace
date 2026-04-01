@@ -17,7 +17,7 @@
           "msg": "bjr"
         }
       },
-      "shipment_status": "Pending",
+      "shipment_status": "InTransit",
       "source": {
         "address": "127.0.0.1",
         "id": "c2ef90b9-02bc-5d53-93cd-92652b6e1b41",

@@ -21,6 +21,13 @@ impl From<&Bundle> for ProtobufBundle {
             ),
         };
 
+        let shipment_status = match b.shipment_status {
+            ModelMsgStatus::Pending => MsgStatus::PENDING, // map pending status to protobuf enum value
+            ModelMsgStatus::InTransit => MsgStatus::PENDING, // represent in-transit as pending on the wire because proto enum has no dedicated variant
+            ModelMsgStatus::Delivered => MsgStatus::DELIVERED, // preserve delivered status during serialization
+            ModelMsgStatus::Expired => MsgStatus::EXPIRED, // preserve expired status during serialization
+        }; // keep status semantics stable across nodes
+
         ProtobufBundle {
             id: b.id.to_string(),
             source_id: b.source.id.to_string(),
@@ -42,7 +49,7 @@ impl From<&Bundle> for ProtobufBundle {
             ttl: b.ttl,
             kind: kind.into(),
             kind_data,
-            shipment_status: MsgStatus::PENDING.into(),
+            shipment_status: shipment_status.into(),
             ..Default::default()
         }
     }
@@ -82,9 +89,23 @@ impl From<ProtobufBundle> for Bundle {
                 BundleKind::ACK => ModelBundleKind::Ack {
                     ack_bundle_id: Uuid::parse_str(&p.kind_data).unwrap_or_default(),
                 },
+                BundleKind::REQUESTSV => ModelBundleKind::RequestSV {
+                    from: Uuid::parse_str(&p.kind_data).unwrap_or_default(), // reconstruct request sender identity from serialized payload
+                },
+                BundleKind::SUMMARYVEC => ModelBundleKind::SummaryVector {
+                    ids: p
+                        .kind_data
+                        .split(',')
+                        .filter_map(|id| Uuid::parse_str(id).ok()) // parse each uuid and ignore malformed entries instead of aborting conversion
+                        .collect(),
+                },
                 _ => ModelBundleKind::Data { msg: p.kind_data },
             },
-            shipment_status: ModelMsgStatus::Pending,
+            shipment_status: match p.shipment_status.enum_value_or_default() {
+                MsgStatus::DELIVERED => ModelMsgStatus::Delivered, // restore delivered state from wire enum
+                MsgStatus::EXPIRED => ModelMsgStatus::Expired, // restore expired state from wire enum
+                MsgStatus::PENDING => ModelMsgStatus::Pending, // keep pending when sender has not finalized lifecycle
+            },
         }
     }
 }
