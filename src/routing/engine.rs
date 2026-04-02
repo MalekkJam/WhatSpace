@@ -56,7 +56,7 @@ impl RoutingEngine {
 
     pub async fn route_bundle(&mut self, bundle: &mut Bundle) {
         if matches!(bundle.kind, BundleKind::Ack { .. }) {
-            let mut requested_ids = self.peers.clone(); // start from configured peers for normal epidemic forwarding
+            let mut requested_ids = self.peers.clone(); 
             if !requested_ids.contains(&bundle.destination.id) {
                 requested_ids.push(bundle.destination.id); // force-include ACK destination so backward route can reach original sender
             }

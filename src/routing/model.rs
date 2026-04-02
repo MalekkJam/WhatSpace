@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize}; // for serializing and deserializing Rust data structures efficiently and generically, in the doc we can find the Derive Macros
+use serde::{Deserialize, Serialize}; 
 use uuid::Uuid;
 
-use crate::routing::RoutingEngine; // id unique // for the date and time
+use crate::routing::RoutingEngine; 
 
-// this file contains the data models
+
 
 // fot he node structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,10 +76,8 @@ pub struct Bundle {
 //implementation of the bundle struct
 impl Bundle {
     pub fn new(source: Node, destination: Node, kind: BundleKind, ttl: u64) -> Self {
-        // for the new bundle we need the source, destination, kind and ttl
         Bundle {
             id: Uuid::new_v4(), // generate a unique id for the bundle using uuid version 4 and convert it to string before storing it in the json file
-            // more information inside the instructions.md file in the feat21-imple…D-generation section
             source,
             destination,
             timestamp: Utc::now(),
