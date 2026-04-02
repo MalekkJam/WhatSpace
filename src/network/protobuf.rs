@@ -1,38 +1,41 @@
+use super::bundle::{BundleKind, MsgStatus, ProtobufBundle};
 use crate::routing::model::{
     Bundle, BundleKind as ModelBundleKind, MsgStatus as ModelMsgStatus, Node,
 };
-use crate::network::bundle::{BundleKind, MsgStatus, ProtobufBundle};
 use chrono::DateTime;
 use protobuf::Message;
 use uuid::Uuid;
 
-impl From<Bundle> for ProtobufBundle {
-    fn from(b: Bundle) -> Self {
-        let (kind, kind_data) = match b.kind {
+impl From<&Bundle> for ProtobufBundle {
+    fn from(b: &Bundle) -> Self {
+        let (kind, kind_data) = match b.kind.clone() {
             ModelBundleKind::Data { msg } => (BundleKind::DATA, msg),
             ModelBundleKind::Ack { ack_bundle_id } => (BundleKind::ACK, ack_bundle_id.to_string()),
+            ModelBundleKind::RequestSV { from } => (BundleKind::REQUESTSV, from.to_string()),
+            ModelBundleKind::SummaryVector { ids } => (
+                BundleKind::SUMMARYVEC,
+                ids.iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
         };
 
         ProtobufBundle {
             id: b.id.to_string(),
             source_id: b.source.id.to_string(),
-            source_name: b.source.name,
-            source_address: b.source.address,
+            source_name: b.source.name.clone(),
+            source_address: b.source.address.clone(),
             source_port: b.source.port as u32,
-            source_peers: b
-                .source
-                .peers
-                .into_iter()
-                .map(|id| id.to_string())
-                .collect(),
+            source_peers: b.source.peers.iter().map(|id| id.to_string()).collect(),
             destination_id: b.destination.id.to_string(),
-            destination_name: b.destination.name,
-            destination_address: b.destination.address,
+            destination_name: b.destination.name.clone(),
+            destination_address: b.destination.address.clone(),
             destination_port: b.destination.port as u32,
             destination_peers: b
                 .destination
                 .peers
-                .into_iter()
+                .iter()
                 .map(|id| id.to_string())
                 .collect(),
             timestamp: b.timestamp.timestamp(),
@@ -59,6 +62,7 @@ impl From<ProtobufBundle> for Bundle {
                     .iter()
                     .map(|id| Uuid::parse_str(id).unwrap_or_default())
                     .collect(),
+                routing_engine: None,
             },
             destination: Node {
                 id: Uuid::parse_str(&p.destination_id).unwrap_or_default(),
@@ -70,6 +74,7 @@ impl From<ProtobufBundle> for Bundle {
                     .iter()
                     .map(|id| Uuid::parse_str(id).unwrap_or_default())
                     .collect(),
+                routing_engine: None,
             },
             timestamp: DateTime::from_timestamp(p.timestamp, 0).unwrap_or_default(),
             ttl: p.ttl,

@@ -6,7 +6,8 @@ use super::model::{Bundle, BundleKind, MsgStatus};
 impl Bundle{
     /// Create an Ack bundle from a successfully delivered Data bundle.
     /// Called by the destination node upon receiving a Data bundle
-    /// intended for it. Source and destination are automatically swapped.
+    /// intended for it
+    ///  Source and destination are automatically swapped.
     pub fn new_ack(delivered_bundle: &Bundle) -> Self {
         Bundle {
             id: Uuid::new_v4(),

@@ -3,6 +3,8 @@ syntax = "proto3";
 enum BundleKind {
     DATA = 0;
     ACK = 1;
+    REQUESTSV = 2;
+    SUMMARYVEC = 3;
 }
 
 enum MsgStatus {

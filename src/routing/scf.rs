@@ -4,12 +4,6 @@ use crate::routing::model::{Bundle, MsgStatus};
 use std::time::Duration;
 use uuid::Uuid;
 
-// function called by the engine when the djikstra doesn't find the next hop
-pub fn store(bundle: &mut Bundle, bundle_manager: &mut BundleManager) {
-    // update the bundle status to pending before storing it
-    bundle.shipment_status = MsgStatus::Pending;
-    bundle_manager.storage.save_bundle(bundle);
-}
 
 impl RoutingEngine {
     // drop bundles that have exceeded their TTL
