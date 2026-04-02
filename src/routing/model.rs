@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize}; // for serializing and deserializing Rust data structures efficiently and generically, in the doc we can find the Derive Macros
 use uuid::Uuid;
 
-use crate::{network::client::connect_to_server, routing::RoutingEngine}; // id unique // for the date and time
+use crate::routing::RoutingEngine; // id unique // for the date and time
 
 // this file contains the data models
 

@@ -83,8 +83,12 @@ impl StorageLayer {
 
     pub fn new(directory: String, capacity: usize) -> Self {
         // initialisation au demarrage
-        let storage_dir = PathBuf::from(&directory); // constructeur prend chemin repertoir et retourne une instance jsonfilestorage
-                                                     // convertit le string en PathBuf qui est un type rust optimisé pour les chemins
+        let mut storage_dir = PathBuf::from(&directory); // constructeur prend chemin repertoir et retourne une instance jsonfilestorage
+                                                         // convertit le string en PathBuf qui est un type rust optimisé pour les chemins
+
+        if storage_dir.is_relative() {
+            storage_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(storage_dir);
+        }
 
         // SI LE REPERTOIRE N'EXISTE PAS IN LE CREE
         if !storage_dir.exists() {

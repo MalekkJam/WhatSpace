@@ -6,9 +6,11 @@ mod storage;
 
 use clap::Parser;
 use cli::cli::Cli;
+use cli::cli::NodeCommands;
 use cli::handler::handle_command;
 use network::server::Server;
 use std::io::{self, Write};
+use std::time::Duration;
 use uuid::Uuid;
 
 fn node_id(name: &str) -> Uuid {
@@ -18,7 +20,7 @@ fn node_id(name: &str) -> Uuid {
 
 #[tokio::main]
 async fn main() {
-    let alice_id = node_id("alice");
+    let _alice_id = node_id("alice");
     let bob_id = node_id("bob");
     let carol_id = node_id("carol");
     let syrine_id = node_id("syrine");
@@ -32,7 +34,7 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() > 1 && (args[1] == "serve" || args[1] == "server") {
-        println!("Starting registry server on 127.0.0.1:8080");
+        println!("Starting registry server on 127.0.0.1:9100");
         let server = Server::new();
         server.start_server();
         return;
@@ -41,7 +43,14 @@ async fn main() {
     // One-shot mode: subcommands passed directly on the command line.
     if args.len() > 1 {
         let cli = Cli::parse();
+        let keep_alive = matches!(&cli.command, NodeCommands::Start { .. });
         handle_command(cli.command, &mut nodes).await;
+        if keep_alive {
+            println!("Node process is running. Press Ctrl+C to stop.");
+            loop {
+                tokio::time::sleep(Duration::from_secs(3600)).await;
+            }
+        }
         return;
     }
 

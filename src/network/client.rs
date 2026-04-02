@@ -1,6 +1,6 @@
 use crate::network::bundle::ProtobufBundle;
 use crate::network::protobuf::{deserialize, serialize};
-use crate::network::server::{ServerRequest, ServerResponse};
+use crate::network::server::ServerRequest;
 use crate::routing::model::{Bundle, BundleKind, Node};
 use crate::routing::RoutingEngine;
 use serde_json;
@@ -11,9 +11,8 @@ use std::time::Duration;
 use tokio::runtime::Builder;
 use uuid::Uuid;
 
-pub fn connect_to_server(node: Node) -> Option<TcpStream> {
-    let address = "127.0.0.1:8080";
-    match connect_with_retry(&address, 3, 2) {
+pub fn connect_to_server(node: Node, server_addr: &str) -> Option<TcpStream> {
+    match connect_with_retry(server_addr, 3, 2) {
         Some(mut stream) => {
             let message = serde_json::to_string(&ServerRequest::Register(node)).unwrap_or_default();
             if stream.write_all(message.as_bytes()).is_err() {
@@ -41,10 +40,10 @@ pub fn connect_to_server(node: Node) -> Option<TcpStream> {
 }
 
 pub fn get_connected_peers_from_server(
+    server_addr: &str,
     requested_ids: &[Uuid],
 ) -> Vec<crate::network::server::PeerRecord> {
-    let address = "127.0.0.1:8080";
-    let mut stream = match connect_with_retry(address, 3, 2) {
+    let mut stream = match connect_with_retry(server_addr, 3, 2) {
         Some(s) => s,
         None => {
             eprintln!("get_connected_peers_from_server: could not reach server");

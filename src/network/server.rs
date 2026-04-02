@@ -49,8 +49,8 @@ impl Server {
     }
 
     pub fn start_server(&self) {
-        let listener = TcpListener::bind("127.0.0.1:8080").expect("Failed to bind to address");
-        println!("Server listening on 127.0.0.1:8080");
+        let listener = TcpListener::bind("127.0.0.1:9100").expect("Failed to bind to address");
+        println!("Server listening on 127.0.0.1:9100");
 
         for stream in listener.incoming() {
             match stream {
@@ -131,10 +131,15 @@ impl Server {
                     node_id = Some(node.id);
 
                     if let Ok(mut map) = self.peer_registry.lock() {
-                        map.push(PeerRecord {
-                            node,
-                            status: ConnectionStatus::Connected,
-                        });
+                        if let Some(existing) = map.iter_mut().find(|r| r.node.id == node.id) {
+                            existing.node = node;
+                            existing.status = ConnectionStatus::Connected;
+                        } else {
+                            map.push(PeerRecord {
+                                node,
+                                status: ConnectionStatus::Connected,
+                            });
+                        }
                         for record in map.iter() {
                             eprintln!(
                                 "  - '{}' ({}) — {:?}",

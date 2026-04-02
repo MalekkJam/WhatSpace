@@ -1,5 +1,5 @@
 use crate::cli::cli::{NodeCommands, PeerCommands};
-use crate::network::client::{connect_to_server, handle_peer_to_peer};
+use crate::network::client::{connect_to_server, get_connected_peers_from_server};
 use crate::routing::model::{Bundle, BundleKind, Node};
 use crate::routing::RoutingEngine;
 use std::collections::HashMap;
@@ -69,7 +69,7 @@ pub async fn handle_command(command: NodeCommands, nodes: &mut Vec<Node>) {
         NodeCommands::Start { name, server } => {
             let node = find_node_mut(nodes, &name);
 
-            let stream = connect_to_server(node.clone());
+            let stream = connect_to_server(node.clone(), &server);
             if stream.is_none() {
                 eprintln!("Failed to connect node {} to server", node.name);
                 return;
@@ -90,6 +90,9 @@ pub async fn handle_command(command: NodeCommands, nodes: &mut Vec<Node>) {
                 ));
             }
             sync_node_engine_peers(node);
+            if let Some(engine) = &mut node.routing_engine {
+                engine.registry_address = server.clone();
+            }
 
             let port = node.port;
             if let Ok(mut ports) = LISTENING_PORTS.lock() {
@@ -187,6 +190,14 @@ pub async fn handle_command(command: NodeCommands, nodes: &mut Vec<Node>) {
             // look up destination first before borrowing sender as mutable
             let destination = find_node(&nodes, &to).clone();
             let sender = find_node_mut(nodes, &from);
+
+            if sender.routing_engine.is_none() {
+                sender.routing_engine = Some(RoutingEngine::new(
+                    sender.id,
+                    sender.peers.clone(),
+                    sender.name.clone(),
+                ));
+            }
             sync_node_engine_peers(sender);
 
             let mut bundle = Bundle::new(
@@ -250,7 +261,7 @@ fn handle_peer_command(
             let peers = node
                 .routing_engine
                 .as_ref()
-                .map(|engine| engine.server.get_connected_peers(&uuids))
+                .map(|engine| get_connected_peers_from_server(&engine.registry_address, &uuids))
                 .unwrap_or_default();
             println!("Connected peers found: {}", peers.len());
             for p in peers {
