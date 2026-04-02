@@ -24,6 +24,34 @@
       },
       "timestamp": "2026-04-01T21:01:32Z",
       "ttl": 3600
+    },
+    {
+      "destination": {
+        "address": "127.0.0.1",
+        "id": "8fd93216-0af3-4c5b-88d9-908877f247cf",
+        "name": "bob",
+        "peers": [],
+        "port": 8081
+      },
+      "id": "b2a5da7e-e4fd-4108-bb98-8a3952f63c10",
+      "kind": {
+        "Data": {
+          "msg": "hello"
+        }
+      },
+      "shipment_status": "Delivered",
+      "source": {
+        "address": "127.0.0.1",
+        "id": "9c9cb921-13d9-471c-a3bd-c51c09385a26",
+        "name": "alice",
+        "peers": [
+          "8fd93216-0af3-4c5b-88d9-908877f247cf",
+          "824036e5-9f01-47ae-81d3-f1cc8129fad4"
+        ],
+        "port": 8080
+      },
+      "timestamp": "2026-04-01T22:04:29Z",
+      "ttl": 3600
     }
   ]
 }
