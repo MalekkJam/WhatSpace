@@ -123,13 +123,13 @@ fn connect_to_peer(source_id: Uuid, destination: String) -> Option<TcpStream> {
     }
 }
 
-pub fn send_bundle(source_id: Uuid, bundle: &Bundle, destination: String) {
+pub fn send_bundle(source_id: Uuid, bundle: &Bundle, destination: String) -> bool {
     let proto_bundle = ProtobufBundle::from(bundle);
     let payload = match serialize(&proto_bundle) {
         Some(bytes) => bytes,
         None => {
             eprintln!("send_bundle: failed to serialize bundle");
-            return;
+            return false;
         }
     };
 
@@ -138,7 +138,7 @@ pub fn send_bundle(source_id: Uuid, bundle: &Bundle, destination: String) {
         Some(s) => s,
         None => {
             eprintln!("send_bundle: could not connect to destination");
-            return;
+            return false;
         }
     };
 
@@ -149,11 +149,15 @@ pub fn send_bundle(source_id: Uuid, bundle: &Bundle, destination: String) {
         .and_then(|_| stream.write_all(&payload))
     {
         eprintln!("send_bundle failed to write to : {}", e);
+        return false;
     }
     let mut ack = [0u8; 4];
     if let Err(e) = stream.read_exact(&mut ack) {
         eprintln!("send_bundle: failed to read ack from  {}", e);
+        return false;
     }
+
+    true
 }
 
 pub fn receive_bundle(stream: &mut TcpStream) -> Option<Bundle> {

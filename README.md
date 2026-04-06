@@ -130,30 +130,35 @@ Available commands:
 The project follows a modular architecture where each feature is isolated in its own module.
 
 ```
-whatspace/
+Whatspace/
 ├── src/
 │   ├── main.rs
-│   ├── config/
-│   │   └── mod.rs
-│   ├── bundle/
-│   │   ├── mod.rs
-│   │   └── model.rs
 │   ├── network/
 │   │   ├── mod.rs
+│   │   ├── bundle.rs
 │   │   ├── server.rs
 │   │   ├── client.rs
-│   │   └── protocol.rs
+│   │   ├── bundle.proto
+│   │   └── protobuf.rs
+|   |
 │   ├── storage/
 │   │   ├── mod.rs
 │   │   └── storage.rs
 │   ├── routing/
 │   │   ├── mod.rs
+│   │   ├── ack.rs
+│   │   ├── bundleManager.rs
+│   │   ├── epidemic.rs
+│   │   ├── model.rs
+│   │   ├── scf.rs
 │   │   └── engine.rs
+|   |
 │   └── cli/
 │       ├── mod.rs
-│       └── commands.rs
-├── config/
-│   └── node1.toml
+│       ├── handlers.rs
+│       └── cli.rs
+├── scripts/
+│   └── test_ack_flow.sh
 ├── docs/
 │   └── architecture.png
 ├── tests/
@@ -241,6 +246,20 @@ Example:
 send --from alice --to carol --message "hello from alice" --ttl 60
 ```
 ---
+
+### 7. Test Script
+
+Start the registry server in a dedicated terminal:
+
+```bash
+cargo run -- serve
+```
+Run the script:
+```bash
+./scripts/test_ack_flow.sh
+```
+
+
 
 ## Future Work
 

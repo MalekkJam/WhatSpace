@@ -2,10 +2,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fmt;
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
+use std::sync::{LazyLock, Mutex};
 use uuid::Uuid;
 
-use crate::routing::model::Bundle;
+use crate::routing::model::{Bundle, BundleKind};
+
+static STORAGE_IO_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 // Error handling strategy
 // The bundle manager will match on this enum to deide wether to retry or log
@@ -44,7 +48,14 @@ pub struct StorageLayer {
 }
 
 impl StorageLayer {
-    fn load_bundles_from_file(storage_dir: &PathBuf) -> Vec<Bundle> {
+    fn has_ack_for_data_id(&self, data_id: Uuid) -> bool {
+        self.bundles.iter().any(|b| match &b.kind {
+            BundleKind::Ack { ack_bundle_id } => *ack_bundle_id == data_id,
+            _ => false,
+        })
+    }
+
+    fn load_bundles_from_file_unlocked(storage_dir: &PathBuf) -> Vec<Bundle> {
         let file_path = storage_dir.join("bundles.json");
 
         if !file_path.exists() {
@@ -77,8 +88,61 @@ impl StorageLayer {
         }
     }
 
+    fn load_bundles_from_file(storage_dir: &PathBuf) -> Vec<Bundle> {
+        let _guard = STORAGE_IO_LOCK.lock().unwrap();
+        Self::load_bundles_from_file_unlocked(storage_dir)
+    }
+
     fn refresh_from_disk(&mut self) {
         self.bundles = Self::load_bundles_from_file(&self.storage_dir);
+    }
+
+    pub fn save_ack_if_new_for_data(&mut self, ack: &Bundle) -> bool {
+        let BundleKind::Ack { ack_bundle_id } = &ack.kind else {
+            return false;
+        };
+
+        let _guard = STORAGE_IO_LOCK.lock().unwrap();
+
+        self.bundles = Self::load_bundles_from_file_unlocked(&self.storage_dir);
+
+        let already_exists = self.bundles.iter().any(|b| match &b.kind {
+            BundleKind::Ack { ack_bundle_id: existing } => *existing == *ack_bundle_id,
+            _ => false,
+        });
+
+        if already_exists {
+            return false;
+        }
+
+        if self.bundles.len() >= self.capacity {
+            return false;
+        }
+
+        self.bundles.push(ack.clone());
+
+        let json_bundles: Vec<Value> = self
+            .bundles
+            .iter()
+            .filter_map(|bundle| serde_json::to_value(bundle).ok())
+            .collect();
+
+        let json_content = json!({ "bundles": json_bundles });
+        let file_path = self.storage_dir.join("bundles.json");
+        let tmp_path = self.storage_dir.join("bundles.json.tmp");
+
+        let payload = match serde_json::to_string_pretty(&json_content) {
+            Ok(p) => p,
+            Err(_) => return false,
+        };
+
+        fs::File::create(&tmp_path)
+            .and_then(|mut f| {
+                f.write_all(payload.as_bytes())?;
+                f.sync_all()
+            })
+            .and_then(|_| fs::rename(&tmp_path, &file_path))
+            .is_ok()
     }
 
     pub fn new(directory: String, capacity: usize) -> Self {
@@ -107,6 +171,7 @@ impl StorageLayer {
     }
 
     pub fn save_to_file(&self) -> Result<(), StorageError> {
+        let _guard = STORAGE_IO_LOCK.lock().unwrap();
         let json_bundles: Vec<Value> = self
             .bundles
             .iter()
@@ -116,10 +181,16 @@ impl StorageLayer {
         let json_content = json!({ "bundles": json_bundles });
 
         let file_path = self.storage_dir.join("bundles.json");
-        match fs::write(
-            &file_path,
-            serde_json::to_string_pretty(&json_content).unwrap(),
-        ) {
+        let tmp_path = self.storage_dir.join("bundles.json.tmp");
+        let payload = serde_json::to_string_pretty(&json_content).unwrap();
+
+        match fs::File::create(&tmp_path)
+            .and_then(|mut f| {
+                f.write_all(payload.as_bytes())?;
+                f.sync_all()
+            })
+            .and_then(|_| fs::rename(&tmp_path, &file_path))
+        {
             Ok(_) => Ok(()),
             Err(e) => {
                 let error = StorageError::SerializationError(format!(
@@ -137,6 +208,12 @@ impl StorageLayer {
     pub fn save_bundle(&mut self, bundle: &Bundle) -> bool {
         self.refresh_from_disk();
         self.cleanup_expired_bundles();
+
+        // If an ACK for this DATA already exists, do not resurrect the DATA bundle.
+        if matches!(bundle.kind, BundleKind::Data { .. }) && self.has_ack_for_data_id(bundle.id) {
+            return false;
+        }
+
         // Check if we have reached storage capacity
         if self.bundles.len() >= self.capacity {
             let err = StorageError::StorageFull(bundle.id.to_string());
@@ -235,5 +312,29 @@ impl StorageLayer {
         }
 
         removed_count
+    }
+
+    // Update an existing bundle in storage (used for status transitions).
+    pub fn update_bundle(&mut self, bundle: &Bundle) -> bool {
+        self.refresh_from_disk();
+
+        // If an ACK for this DATA already exists, do not resurrect/update it.
+        if matches!(bundle.kind, BundleKind::Data { .. }) && self.has_ack_for_data_id(bundle.id) {
+            return false;
+        }
+
+        if let Some(existing) = self.bundles.iter_mut().find(|b| b.id == bundle.id) {
+            *existing = bundle.clone();
+            match self.save_to_file() {
+                Ok(_) => true,
+                Err(e) => {
+                    eprintln!("Error saving updated bundle to file: {}", e);
+                    false
+                }
+            }
+        } else {
+            eprintln!("{}", StorageError::NotFound(bundle.id.to_string()));
+            false
+        }
     }
 }

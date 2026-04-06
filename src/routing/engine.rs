@@ -68,17 +68,40 @@ impl RoutingEngine {
                 .collect();
 
             if self.node_id == bundle.destination.id {
-                if let BundleKind::Ack { ack_bundle_id } = &bundle.kind {
-                    self.bundle_manager.delete_bundle(*ack_bundle_id); // delete the original Data bundle at source when its ACK arrives
-                }
+                self.bundle_manager.handle_incoming_ack(bundle);
+
+                bundle.shipment_status = super::model::MsgStatus::Delivered;
+                self.bundle_manager.upsert_bundle(bundle);
                 return;
             }
 
-            self.bundle_manager.handle_incoming_ack(bundle);
+            // Forward only first-seen ACKs to limit duplicate loops.
+            if !self.bundle_manager.handle_incoming_ack(bundle) {
+                return;
+            }
 
+            let mut peers_needing_ack = Vec::new();
             for peer in connected_peers {
+                let peer_sv = self.get_peer_summary_vector(
+                    peer.node.address.as_str(),
+                    peer.node.port,
+                );
+                if !peer_sv.contains(&bundle.id) {
+                    peers_needing_ack.push(peer);
+                }
+            }
+
+            let mut sent_count = 0usize;
+            for peer in peers_needing_ack {
                 let destination_adress = format!("{}:{}", peer.node.address, peer.node.port);
-                send_bundle(peer.node.id, bundle, destination_adress);
+                if send_bundle(self.node_id, bundle, destination_adress) {
+                    sent_count += 1;
+                }
+            }
+
+            if sent_count > 0 {
+                bundle.shipment_status = super::model::MsgStatus::InTransit;
+                self.bundle_manager.upsert_bundle(bundle);
             }
             return;
         }
@@ -107,10 +130,41 @@ impl RoutingEngine {
             self.bundle_manager.upsert_bundle(bundle);
 
             let ack = Bundle::new_ack(bundle);
-            self.bundle_manager.save_bundle(&ack);
+
+            // ACK id is deterministic per DATA bundle id; store and forward only once.
+            let created_here = if self.bundle_manager.has_bundle(ack.id) {
+                false
+            } else {
+                self.bundle_manager.save_bundle(&ack)
+            };
+
+            if !created_here {
+                return;
+            }
+
+            let mut peers_needing_ack = Vec::new();
             for peer in connected_peers {
+                let peer_sv = self.get_peer_summary_vector(
+                    peer.node.address.as_str(),
+                    peer.node.port,
+                );
+                if !peer_sv.contains(&ack.id) {
+                    peers_needing_ack.push(peer);
+                }
+            }
+
+            let mut sent_count = 0usize;
+            for peer in peers_needing_ack {
                 let destination_adress = format!("{}:{}", peer.node.address, peer.node.port);
-                send_bundle(peer.node.id, &ack, destination_adress);
+                if send_bundle(self.node_id, &ack, destination_adress) {
+                    sent_count += 1;
+                }
+            }
+
+            if sent_count > 0 {
+                let mut ack_in_transit = ack.clone();
+                ack_in_transit.shipment_status = super::model::MsgStatus::InTransit;
+                self.bundle_manager.upsert_bundle(&ack_in_transit);
             }
             return;
         }
@@ -150,9 +204,8 @@ impl RoutingEngine {
         }
     }
 
-    pub fn retry_pending_bundles(&mut self) {
-        let connected_peers: Vec<_> =
-            get_connected_peers_from_server(&self.registry_address, &self.peers)
+    pub fn retry_unsynced_bundles(&mut self) {
+        let connected_peers: Vec<_> = get_connected_peers_from_server(&self.peers)
             .into_iter()
             .filter(|p| p.node.id != self.node_id)
             .collect();
@@ -162,15 +215,15 @@ impl RoutingEngine {
         }
 
         let local_sv = Self::get_summary_vector(&mut self.bundle_manager);
-        let pending_bundles: Vec<Bundle> = local_sv
+        let retryable_bundles: Vec<Bundle> = local_sv
             .into_iter()
             .filter(|b| {
                 b.shipment_status == super::model::MsgStatus::Pending
-                    && matches!(b.kind, BundleKind::Data { .. })
+                    || b.shipment_status == super::model::MsgStatus::InTransit
             })
             .collect();
 
-        if pending_bundles.is_empty() {
+        if retryable_bundles.is_empty() {
             return;
         }
 
@@ -181,15 +234,16 @@ impl RoutingEngine {
                 connected_peer.node.port,
             );
 
-            let to_forward = self.anti_entropy(&pending_bundles, &peer_sv);
+            let to_forward = self.anti_entropy(&retryable_bundles, &peer_sv);
             let destination_adress = format!(
                 "{}:{}",
                 connected_peer.node.address, connected_peer.node.port
             );
 
             for bundle in to_forward {
-                send_bundle(self.node_id, bundle, destination_adress.clone());
-                if !sent_bundle_ids.contains(&bundle.id) {
+                if send_bundle(self.node_id, bundle, destination_adress.clone())
+                    && !sent_bundle_ids.contains(&bundle.id)
+                {
                     sent_bundle_ids.push(bundle.id);
                 }
             }

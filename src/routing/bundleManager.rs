@@ -1,4 +1,4 @@
-use crate::routing::model::{Bundle, BundleKind};
+use crate::routing::model::{Bundle, BundleKind, MsgStatus};
 use crate::storage::StorageLayer;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -39,9 +39,10 @@ impl BundleManager {
 
     pub fn upsert_bundle(&mut self, bundle: &Bundle) -> bool {
         if self.storage.get_bundle(bundle.id).is_some() {
-            self.storage.delete_bundle(bundle.id);
+            self.storage.update_bundle(bundle)
+        } else {
+            self.storage.save_bundle(bundle)
         }
-        self.storage.save_bundle(bundle)
     }
 
     // Function to get all bundles stored at the node, used by the SCF to drop expired bundles
@@ -49,19 +50,32 @@ impl BundleManager {
         self.storage.get_all_bundles()
     }
 
+    pub fn has_ack_for_data_bundle(&mut self, data_bundle_id: Uuid) -> bool {
+        self.storage.get_all_bundles().iter().any(|b| match &b.kind {
+            BundleKind::Ack { ack_bundle_id } => *ack_bundle_id == data_bundle_id,
+            _ => false,
+        })
+    }
+
     /// Called when an Ack bundle is received from a peer.
-    /// Deletes the corresponding Data bundle from local storage.
+    /// Marks the corresponding Data bundle as Delivered and then deletes it.
     /// Returns false if the Ack was already known (duplicate).
     pub fn handle_incoming_ack(&mut self, ack: &Bundle) -> bool {
-        // Deduplication — have we already seen this ACK?
-        if self.storage.get_bundle(ack.id).is_some() {
-            return false;
-        }
-        // Save the ACK to propagate it to other peers
-        // Delete the corresponding local Data bundle
         if let BundleKind::Ack { ack_bundle_id } = &ack.kind {
-            self.storage.delete_bundle(*ack_bundle_id);
-            self.storage.save_bundle(ack) // always save ack so it continues to propagate
+            // Always apply local cleanup for the matching DATA bundle if present.
+            if let Some(mut data_bundle) = self.storage.get_bundle(*ack_bundle_id) {
+                data_bundle.shipment_status = MsgStatus::Delivered;
+                let _ = self.storage.update_bundle(&data_bundle);
+                let _ = self.storage.delete_bundle(*ack_bundle_id);
+            }
+
+            // Deduplicate ACK persistence/forwarding.
+            if self.has_ack_for_data_bundle(*ack_bundle_id) || self.storage.get_bundle(ack.id).is_some() {
+                return false;
+            }
+
+            // Keep one ACK record per data bundle (ACK id is deterministic).
+            self.storage.save_bundle(ack)
         } else {
             false
         }

@@ -147,7 +147,7 @@ pub async fn handle_command(command: NodeCommands, nodes: &mut Vec<Node>) {
                             continue;
                         }
 
-                        retry_engine.retry_pending_bundles();
+                        retry_engine.retry_unsynced_bundles();
                     });
                 }
             }
