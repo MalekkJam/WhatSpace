@@ -130,7 +130,7 @@ Available commands:
 The project follows a modular architecture where each feature is isolated in its own module.
 
 ```
-whatspace/
+Whatspace/
 ├── src/
 │   ├── main.rs
 │   ├── network/
@@ -138,19 +138,21 @@ whatspace/
 │   │   ├── bundle.rs
 │   │   ├── server.rs
 │   │   ├── client.rs
-│   │   └── protobuf.rs
 │   │   ├── bundle.proto
+│   │   └── protobuf.rs
+
 │   ├── storage/
 │   │   ├── mod.rs
 │   │   └── storage.rs
 │   ├── routing/
 │   │   ├── mod.rs
-│   │   └── engine.rs
 │   │   ├── ack.rs
 │   │   ├── bundleManager.rs
 │   │   ├── epidemic.rs
 │   │   ├── model.rs
 │   │   ├── scf.rs
+│   │   └── engine.rs
+
 │   └── cli/
 │       ├── mod.rs
 │       ├── handlers.rs
