@@ -133,27 +133,30 @@ The project follows a modular architecture where each feature is isolated in its
 whatspace/
 ├── src/
 │   ├── main.rs
-│   ├── config/
-│   │   └── mod.rs
-│   ├── bundle/
-│   │   ├── mod.rs
-│   │   └── model.rs
 │   ├── network/
 │   │   ├── mod.rs
+│   │   ├── bundle.rs
 │   │   ├── server.rs
 │   │   ├── client.rs
-│   │   └── protocol.rs
+│   │   └── protobuf.rs
+│   │   ├── bundle.proto
 │   ├── storage/
 │   │   ├── mod.rs
 │   │   └── storage.rs
 │   ├── routing/
 │   │   ├── mod.rs
 │   │   └── engine.rs
+│   │   ├── ack.rs
+│   │   ├── bundleManager.rs
+│   │   ├── epidemic.rs
+│   │   ├── model.rs
+│   │   ├── scf.rs
 │   └── cli/
 │       ├── mod.rs
-│       └── commands.rs
-├── config/
-│   └── node1.toml
+│       ├── handlers.rs
+│       └── cli.rs
+├── scripts/
+│   └── test_ack_flow.sh
 ├── docs/
 │   └── architecture.png
 ├── tests/
@@ -166,13 +169,95 @@ whatspace/
 
 ### 1. Build
 
-```cargo build```
+```bash
+cargo build
+```
 
-### 2. Run a node 
+### 2. Run the registry server
 
-To be specified later !!! 
+Start the registry server in a dedicated terminal:
 
+```bash
+cargo run -- serve
+```
+
+You can also use:
+
+```bash
+cargo run -- server
+```
+
+The registry server listens on `127.0.0.1:8080`.
+
+### 3. Run the application in interactive mode
+
+Open another terminal and start the application:
+
+```bash
+cargo run
+```
+
+This opens interactive mode with the predefined demo nodes:
+
+- `alice` on `127.0.0.1:9001`
+- `bob` on `127.0.0.1:9002`
+- `carol` on `127.0.0.1:9003`
+
+### 4. Run a node
+
+Inside interactive mode, start a node and register it with the registry server:
+
+```text
+start alice --server 127.0.0.1:8080
+```
+
+You can start additional demo nodes the same way:
+
+```text
+start bob --server 127.0.0.1:8080
+start carol --server 127.0.0.1:8080
+```
+
+Each started node opens its peer listener on its configured local port.
+
+### 5. Available interactive commands
+
+```text
+all
+start <name> --server 127.0.0.1:8080
+stop <name>
+status <name>
+peers <name> list-peers
+peers <name> get-connected-peers <uuid> [<uuid> ...]
+peers <name> add <peer-name>
+peers <name> remove <peer-name>
+send --from <name> --to <name> --message "<message>" --ttl <seconds>
+help
+exit
+```
+
+### 6. Send a bundle
+
+Example:
+
+```text
+send --from alice --to carol --message "hello from alice" --ttl 60
+```
 ---
+
+### 7. Test Script
+
+Start the registry server in a dedicated terminal:
+
+```bash
+cargo run -- serve
+```
+Run the script:
+```bash
+./scripts/test_ack_flow.sh
+```
+
+
 
 ## Future Work
 
